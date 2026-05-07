@@ -9,424 +9,256 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
-});
+const io = new Server(server, { cors: { origin: '*', methods: ['GET', 'POST'] } });
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── In-memory state ───────────────────────────────────────────────────────────
+// ── Per-client state ──────────────────────────────────────────────────────────
+// Each client gets their own isolated data store keyed by client slug
+// e.g. "acme-corp", "techstart-inc"
 
-const state = {
-  emailStats: {
-    sent: 0,
-    opened: 0,
-    replied: 0,
-    bounced: 0,
-    unsubscribed: 0,
-    clicked: 0,
-    openRate: 0,
-    replyRate: 0,
-    bounceRate: 0
-  },
-  callStats: {
-    total: 0,
-    connected: 0,
-    voicemail: 0,
-    noAnswer: 0,
-    attempted: 0,
-    connectionRate: 0
-  },
-  campaigns: [],
-  callLogs: [],
-  activityFeed: [],
-  lastUpdated: null
-};
+const clients = {};
 
-const MAX_FEED_ITEMS = 100;
-const MAX_CALL_LOGS = 200;
+function getClient(clientId) {
+  const id = (clientId || 'default').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  if (!clients[id]) {
+    clients[id] = {
+      id,
+      emailStats:  { sent:0, opened:0, replied:0, bounced:0, unsubscribed:0, clicked:0, openRate:0, replyRate:0, bounceRate:0 },
+      callStats:   { total:0, connected:0, voicemail:0, noAnswer:0, connectionRate:0 },
+      callLogs:    [],
+      activityFeed:[],
+      campaigns:   [],
+      lastUpdated: null
+    };
+  }
+  return clients[id];
+}
 
-function addActivity(type, source, message, data = {}) {
+function recomputeRates(c) {
+  const e = c.emailStats, ca = c.callStats;
+  e.openRate   = e.sent > 0 ? +((e.opened  / e.sent) * 100).toFixed(1) : 0;
+  e.replyRate  = e.sent > 0 ? +((e.replied / e.sent) * 100).toFixed(1) : 0;
+  e.bounceRate = e.sent > 0 ? +((e.bounced / e.sent) * 100).toFixed(1) : 0;
+  ca.connectionRate = ca.total > 0 ? +((ca.connected / ca.total) * 100).toFixed(1) : 0;
+}
+
+function addActivity(c, type, source, message, data = {}) {
   const item = {
     id: Date.now() + Math.random().toString(36).slice(2),
-    type,       // 'email_sent' | 'email_reply' | 'email_bounce' | 'email_open' |
-                // 'call_connected' | 'call_voicemail' | 'call_attempt' | 'system'
-    source,     // 'instantly' | 'clay' | 'system'
-    message,
-    data,
+    type, source, message, data,
     timestamp: new Date().toISOString()
   };
-  state.activityFeed.unshift(item);
-  if (state.activityFeed.length > MAX_FEED_ITEMS) {
-    state.activityFeed.pop();
-  }
-  io.emit('activity', item);
+  c.activityFeed.unshift(item);
+  if (c.activityFeed.length > 100) c.activityFeed.pop();
+  io.to(`client:${c.id}`).emit('activity', item);
   return item;
 }
 
-function recomputeRates() {
-  const { sent, opened, replied, bounced } = state.emailStats;
-  state.emailStats.openRate = sent > 0 ? +((opened / sent) * 100).toFixed(1) : 0;
-  state.emailStats.replyRate = sent > 0 ? +((replied / sent) * 100).toFixed(1) : 0;
-  state.emailStats.bounceRate = sent > 0 ? +((bounced / sent) * 100).toFixed(1) : 0;
-
-  const { total, connected } = state.callStats;
-  state.callStats.connectionRate = total > 0 ? +((connected / total) * 100).toFixed(1) : 0;
+function broadcastStats(c) {
+  io.to(`client:${c.id}`).emit('stats_update', {
+    emailStats: c.emailStats,
+    callStats:  c.callStats
+  });
 }
 
-// ─── Clay Webhook Handler ──────────────────────────────────────────────────────
-
-function verifyClaySignature(req) {
-  const secret = process.env.CLAY_WEBHOOK_SECRET;
-  if (!secret) return true; // skip if not configured
-  const sig = req.headers['x-clay-signature'] || req.headers['x-webhook-signature'];
-  if (!sig) return false;
-  const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(JSON.stringify(req.body));
-  const expected = 'sha256=' + hmac.digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+function clientState(c) {
+  return {
+    clientId:    c.id,
+    emailStats:  c.emailStats,
+    callStats:   c.callStats,
+    callLogs:    c.callLogs.slice(0, 50),
+    activityFeed:c.activityFeed.slice(0, 50),
+    campaigns:   c.campaigns,
+    lastUpdated: c.lastUpdated
+  };
 }
+
+// ── Clay Webhook ──────────────────────────────────────────────────────────────
+// URL format: POST /webhook/clay?client=acme-corp
+//
+// Clay field mapping (set these in your Clay HTTP action):
+// {
+//   "event_type":    "call" | "email_sent" | "reply" | "bounce" | "open",
+//   "client":        "acme-corp",          ← Clay column or hardcoded per table
+//   "contact": {
+//     "first_name":  "{{First Name}}",
+//     "last_name":   "{{Last Name}}",
+//     "email":       "{{Email}}",
+//     "phone":       "{{Phone}}"
+//   },
+//   "company":       "{{Company}}",
+//   "disposition":   "{{Call Disposition}}",   ← Connected / Voicemail / No Answer
+//   "duration":      "{{Call Duration}}",      ← seconds (number)
+//   "recording_url": "{{Recording URL}}",
+//   "notes":         "{{Call Notes}}",
+//   "agent":         "{{Agent Name}}"
+// }
 
 app.post('/webhook/clay', (req, res) => {
-  if (!verifyClaySignature(req)) {
-    return res.status(401).json({ error: 'Invalid signature' });
-  }
-
   const payload = req.body;
-  // Clay can send single events or arrays
-  const events = Array.isArray(payload) ? payload : [payload];
+  const events  = Array.isArray(payload) ? payload : [payload];
+  let processed = 0;
 
-  events.forEach(event => processClaySEvent(event));
-  res.json({ received: true, count: events.length });
+  events.forEach(event => {
+    // Client can come from query param OR body field
+    const clientId = req.query.client || event.client || event.client_id || 'default';
+    const c = getClient(clientId);
+    processClaySEvent(c, event);
+    processed++;
+  });
+
+  res.json({ ok: true, processed });
 });
 
-function processClaySEvent(event) {
+function processClaySEvent(c, event) {
   const eventType = (event.event_type || event.type || event.action || '').toLowerCase();
-  const contact = event.contact || event.lead || event.person || {};
+  const contact   = event.contact || {};
   const name = contact.first_name
     ? `${contact.first_name} ${contact.last_name || ''}`.trim()
-    : contact.name || contact.email || 'Unknown';
+    : contact.name || contact.email || event.contact_name || 'Unknown';
 
-  if (eventType.includes('email_sent') || eventType.includes('sent')) {
-    state.emailStats.sent++;
-    recomputeRates();
-    addActivity('email_sent', 'clay', `Email sent to ${name}`, { contact, raw: event });
-    io.emit('stats_update', { emailStats: state.emailStats });
+  if (eventType.includes('call')) {
+    processCall(c, event, name);
   } else if (eventType.includes('reply') || eventType.includes('responded')) {
-    state.emailStats.replied++;
-    recomputeRates();
-    addActivity('email_reply', 'clay', `Reply received from ${name}`, { contact, raw: event });
-    io.emit('stats_update', { emailStats: state.emailStats });
+    c.emailStats.replied++; recomputeRates(c);
+    addActivity(c, 'email_reply', 'clay', `Reply from ${name}`);
+    broadcastStats(c);
   } else if (eventType.includes('bounce')) {
-    state.emailStats.bounced++;
-    recomputeRates();
-    addActivity('email_bounce', 'clay', `Email bounced for ${name}`, { contact, raw: event });
-    io.emit('stats_update', { emailStats: state.emailStats });
+    c.emailStats.bounced++; recomputeRates(c);
+    addActivity(c, 'email_bounce', 'clay', `Email bounced — ${name}`);
+    broadcastStats(c);
   } else if (eventType.includes('open')) {
-    state.emailStats.opened++;
-    recomputeRates();
-    addActivity('email_open', 'clay', `Email opened by ${name}`, { contact, raw: event });
-    io.emit('stats_update', { emailStats: state.emailStats });
-  } else if (eventType.includes('unsubscribe') || eventType.includes('opt_out')) {
-    state.emailStats.unsubscribed++;
-    recomputeRates();
-    addActivity('unsubscribe', 'clay', `${name} unsubscribed`, { contact, raw: event });
-    io.emit('stats_update', { emailStats: state.emailStats });
-  } else if (eventType.includes('call')) {
-    processCallEvent(event, 'clay');
+    c.emailStats.opened++; recomputeRates(c);
+    addActivity(c, 'email_open', 'clay', `Email opened by ${name}`);
+    broadcastStats(c);
+  } else if (eventType.includes('sent') || eventType.includes('email_sent')) {
+    c.emailStats.sent++; recomputeRates(c);
+    addActivity(c, 'email_sent', 'clay', `Email sent to ${name}`);
+    broadcastStats(c);
   } else {
-    // Generic Clay event
-    addActivity('system', 'clay', `Clay event: ${eventType || 'unknown'}`, { raw: event });
+    addActivity(c, 'system', 'clay', `Clay event: ${eventType || 'unknown'}`);
   }
+
+  c.lastUpdated = new Date().toISOString();
 }
 
-function processCallEvent(event, source) {
-  const disposition = (event.disposition || event.call_disposition || event.outcome || '').toLowerCase();
-  const contact = event.contact || event.lead || event.person || {};
-  const name = contact.first_name
-    ? `${contact.first_name} ${contact.last_name || ''}`.trim()
-    : contact.name || contact.phone || 'Unknown';
+function processCall(c, event, name) {
+  const disp = (event.disposition || event.call_disposition || event.outcome || '').toLowerCase();
 
-  const callLog = {
-    id: event.id || Date.now().toString(),
-    contact: name,
-    phone: contact.phone || event.phone || '',
-    disposition: event.disposition || event.outcome || 'Unknown',
-    duration: event.duration || event.call_duration || 0,
+  const log = {
+    id:           event.id || Date.now().toString(),
+    contact:      name,
+    company:      event.company || event.contact?.company || '',
+    phone:        event.contact?.phone || event.phone || '',
+    disposition:  event.disposition || event.outcome || 'Unknown',
+    duration:     parseInt(event.duration || event.call_duration || 0),
     recordingUrl: event.recording_url || event.call_recording || null,
-    notes: event.notes || event.call_notes || '',
-    agent: event.agent || event.caller || '',
-    timestamp: event.timestamp || event.created_at || new Date().toISOString(),
-    source
+    notes:        event.notes || event.call_notes || event.summary || '',
+    agent:        event.agent || event.agent_name || '',
+    source:       event.source || 'clay',  // 'bland' | 'calltools' | 'clay'
+    timestamp:    event.timestamp || event.created_at || new Date().toISOString()
   };
 
-  state.callLogs.unshift(callLog);
-  if (state.callLogs.length > MAX_CALL_LOGS) state.callLogs.pop();
+  c.callLogs.unshift(log);
+  if (c.callLogs.length > 200) c.callLogs.pop();
 
-  state.callStats.total++;
-  state.callStats.attempted++;
-
-  if (disposition.includes('connected') || disposition.includes('answered') || disposition.includes('conversation')) {
-    state.callStats.connected++;
-    addActivity('call_connected', source, `Call connected with ${name} (${formatDuration(callLog.duration)})`, callLog);
-  } else if (disposition.includes('voicemail') || disposition.includes('vm')) {
-    state.callStats.voicemail++;
-    addActivity('call_voicemail', source, `Voicemail left for ${name}`, callLog);
-  } else if (disposition.includes('no answer') || disposition.includes('no_answer')) {
-    state.callStats.noAnswer++;
-    addActivity('call_attempt', source, `No answer for ${name}`, callLog);
+  c.callStats.total++;
+  if (disp.includes('connect') || disp.includes('answered') || disp.includes('conversation')) {
+    c.callStats.connected++;
+    addActivity(c, 'call_connected', 'clay', `Call connected — ${name} (${fmtDur(log.duration)})`, log);
+  } else if (disp.includes('voicemail') || disp.includes('vm')) {
+    c.callStats.voicemail++;
+    addActivity(c, 'call_voicemail', 'clay', `Voicemail left for ${name}`, log);
   } else {
-    addActivity('call_attempt', source, `Call attempt: ${callLog.disposition} — ${name}`, callLog);
+    c.callStats.noAnswer++;
+    addActivity(c, 'call_attempt', 'clay', `No answer — ${name}`, log);
   }
 
-  recomputeRates();
-  io.emit('stats_update', { callStats: state.callStats });
-  io.emit('call_log_new', callLog);
+  recomputeRates(c);
+  broadcastStats(c);
+  io.to(`client:${c.id}`).emit('call_log_new', log);
+  c.lastUpdated = new Date().toISOString();
 }
 
-function formatDuration(seconds) {
-  if (!seconds) return '0s';
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+function fmtDur(s) {
+  if (!s) return '0s';
+  const m = Math.floor(s / 60), r = s % 60;
+  return m > 0 ? `${m}m ${r}s` : `${r}s`;
 }
 
-// ─── Instantly API Polling ─────────────────────────────────────────────────────
+// ── Instantly Webhook ─────────────────────────────────────────────────────────
+// URL format: POST /webhook/instantly?client=acme-corp
+// Instantly sends these event types: email_sent, email_opened, email_replied,
+//   email_bounced, email_unsubscribed, email_link_clicked
 
-const INSTANTLY_BASE = 'https://api.instantly.ai/api/v1';
+app.post('/webhook/instantly', (req, res) => {
+  const event    = req.body;
+  const clientId = req.query.client || event.campaign_name || 'default';
+  const c        = getClient(clientId);
 
-async function fetchInstantlyData() {
-  const apiKey = process.env.INSTANTLY_API_KEY;
-  if (!apiKey || apiKey === 'your_instantly_api_key_here') return;
+  const type  = (event.event_type || event.type || '').toLowerCase();
+  const email = event.to_address || event.email || event.lead_email || '';
+  const campaign = event.campaign_name || event.campaign_id || '';
 
-  try {
-    const [summaryRes, campaignsRes] = await Promise.allSettled([
-      axios.get(`${INSTANTLY_BASE}/analytics/overview`, {
-        params: { api_key: apiKey }
-      }),
-      axios.get(`${INSTANTLY_BASE}/campaign/list`, {
-        params: { api_key: apiKey, limit: 20, skip: 0 }
-      })
-    ]);
-
-    // Process overview/summary stats
-    if (summaryRes.status === 'fulfilled') {
-      const data = summaryRes.value.data;
-      updateEmailStatsFromInstantly(data);
-    }
-
-    // Process campaigns list
-    if (campaignsRes.status === 'fulfilled') {
-      const campaigns = campaignsRes.value.data;
-      await fetchCampaignAnalytics(apiKey, campaigns);
-    }
-
-    state.lastUpdated = new Date().toISOString();
-    io.emit('full_state', getPublicState());
-  } catch (err) {
-    console.error('[Instantly] Fetch error:', err.message);
-    addActivity('system', 'system', `Instantly sync error: ${err.message}`);
+  if (type.includes('sent')) {
+    c.emailStats.sent++; recomputeRates(c);
+    addActivity(c, 'email_sent', 'instantly', `Email sent to ${email}${campaign ? ` — ${campaign}` : ''}`);
+  } else if (type.includes('open')) {
+    c.emailStats.opened++; recomputeRates(c);
+    addActivity(c, 'email_open', 'instantly', `Email opened — ${email}`);
+  } else if (type.includes('repl')) {
+    c.emailStats.replied++; recomputeRates(c);
+    addActivity(c, 'email_reply', 'instantly', `Reply from ${email}`);
+  } else if (type.includes('bounc')) {
+    c.emailStats.bounced++; recomputeRates(c);
+    addActivity(c, 'email_bounce', 'instantly', `Bounce — ${email}`);
+  } else if (type.includes('unsub')) {
+    c.emailStats.unsubscribed++; recomputeRates(c);
+    addActivity(c, 'unsubscribe', 'instantly', `Unsubscribed — ${email}`);
+  } else if (type.includes('click')) {
+    c.emailStats.clicked++; recomputeRates(c);
+    addActivity(c, 'email_open', 'instantly', `Link clicked — ${email}`);
   }
-}
 
-async function fetchCampaignAnalytics(apiKey, campaigns) {
-  if (!campaigns || !Array.isArray(campaigns)) return;
-
-  const campaignData = await Promise.allSettled(
-    campaigns.slice(0, 10).map(async (campaign) => {
-      try {
-        const res = await axios.get(`${INSTANTLY_BASE}/analytics/campaign/summary`, {
-          params: { api_key: apiKey, id: campaign.id }
-        });
-        return { ...campaign, analytics: res.data };
-      } catch {
-        return campaign;
-      }
-    })
-  );
-
-  state.campaigns = campaignData
-    .filter(r => r.status === 'fulfilled')
-    .map(r => r.value);
-
-  io.emit('campaigns_update', state.campaigns);
-}
-
-function updateEmailStatsFromInstantly(data) {
-  if (!data) return;
-
-  // Instantly v1 analytics overview fields
-  const prev = { ...state.emailStats };
-
-  state.emailStats.sent = data.total_sent || data.emails_sent || state.emailStats.sent;
-  state.emailStats.opened = data.total_opened || data.emails_opened || state.emailStats.opened;
-  state.emailStats.replied = data.total_replied || data.emails_replied || state.emailStats.replied;
-  state.emailStats.bounced = data.total_bounced || data.emails_bounced || state.emailStats.bounced;
-  state.emailStats.unsubscribed = data.total_unsubscribed || data.emails_unsubscribed || state.emailStats.unsubscribed;
-  state.emailStats.clicked = data.total_clicked || data.emails_clicked || state.emailStats.clicked;
-
-  recomputeRates();
-
-  // Emit activity for new events since last poll
-  const deltas = {
-    sent: state.emailStats.sent - prev.sent,
-    replied: state.emailStats.replied - prev.replied,
-    bounced: state.emailStats.bounced - prev.bounced,
-    opened: state.emailStats.opened - prev.opened
-  };
-
-  if (deltas.sent > 0) addActivity('email_sent', 'instantly', `${deltas.sent} new email(s) sent via Instantly`);
-  if (deltas.replied > 0) addActivity('email_reply', 'instantly', `${deltas.replied} new reply(ies) from Instantly`);
-  if (deltas.bounced > 0) addActivity('email_bounce', 'instantly', `${deltas.bounced} bounce(s) from Instantly`);
-  if (deltas.opened > 0) addActivity('email_open', 'instantly', `${deltas.opened} new open(s) from Instantly`);
-
-  io.emit('stats_update', { emailStats: state.emailStats });
-}
-
-// ─── REST endpoints ────────────────────────────────────────────────────────────
-
-app.get('/api/state', (req, res) => res.json(getPublicState()));
-
-app.get('/api/call-logs', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, MAX_CALL_LOGS);
-  res.json(state.callLogs.slice(0, limit));
-});
-
-app.get('/api/activity', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, MAX_FEED_ITEMS);
-  res.json(state.activityFeed.slice(0, limit));
-});
-
-// Manual Instantly refresh
-app.post('/api/refresh', async (req, res) => {
-  await fetchInstantlyData();
-  res.json({ ok: true, lastUpdated: state.lastUpdated });
-});
-
-// Seed demo data for testing without real API keys
-app.post('/api/demo', (req, res) => {
-  seedDemoData();
+  broadcastStats(c);
+  c.lastUpdated = new Date().toISOString();
   res.json({ ok: true });
 });
 
-function getPublicState() {
-  return {
-    emailStats: state.emailStats,
-    callStats: state.callStats,
-    campaigns: state.campaigns,
-    callLogs: state.callLogs.slice(0, 50),
-    activityFeed: state.activityFeed.slice(0, 50),
-    lastUpdated: state.lastUpdated
-  };
-}
+// ── REST API ──────────────────────────────────────────────────────────────────
 
-// ─── Socket.io ────────────────────────────────────────────────────────────────
-
-io.on('connection', (socket) => {
-  console.log('[WS] Client connected:', socket.id);
-  socket.emit('full_state', getPublicState());
-  socket.on('disconnect', () => console.log('[WS] Client disconnected:', socket.id));
+// List all active clients
+app.get('/api/clients', (req, res) => {
+  res.json(Object.keys(clients));
 });
 
-// ─── Demo data ────────────────────────────────────────────────────────────────
+// Full state for a client
+app.get('/api/state/:clientId', (req, res) => {
+  res.json(clientState(getClient(req.params.clientId)));
+});
 
-function seedDemoData() {
-  const contacts = [
-    { name: 'Sarah Chen', email: 'sarah@techcorp.io', phone: '+1-415-555-0101' },
-    { name: 'Marcus Webb', email: 'marcus@startupco.com', phone: '+1-650-555-0192' },
-    { name: 'Priya Sharma', email: 'priya@saas.dev', phone: '+1-408-555-0183' },
-    { name: 'Jake Torres', email: 'jake@enterprise.net', phone: '+1-212-555-0174' },
-    { name: 'Emma Liu', email: 'emma@growth.io', phone: '+1-617-555-0165' },
-    { name: 'Raj Patel', email: 'raj@b2b.co', phone: '+1-737-555-0156' }
-  ];
+// Health check (Railway uses this)
+app.get('/health', (req, res) => res.json({ ok: true, clients: Object.keys(clients).length }));
 
-  // Reset stats
-  state.emailStats = { sent: 0, opened: 0, replied: 0, bounced: 0, unsubscribed: 0, clicked: 0, openRate: 0, replyRate: 0, bounceRate: 0 };
-  state.callStats = { total: 0, connected: 0, voicemail: 0, noAnswer: 0, attempted: 0, connectionRate: 0 };
-  state.callLogs = [];
-  state.activityFeed = [];
+// ── Socket.io rooms ───────────────────────────────────────────────────────────
+// Each browser joins a room for their client: "client:acme-corp"
 
-  // Seed historical stats
-  state.emailStats.sent = 847;
-  state.emailStats.opened = 312;
-  state.emailStats.replied = 89;
-  state.emailStats.bounced = 14;
-  state.emailStats.unsubscribed = 6;
-  state.emailStats.clicked = 201;
-  recomputeRates();
-
-  state.callStats.total = 156;
-  state.callStats.connected = 61;
-  state.callStats.voicemail = 48;
-  state.callStats.noAnswer = 47;
-  state.callStats.attempted = 156;
-  recomputeRates();
-
-  // Demo campaigns
-  state.campaigns = [
-    { id: 'c1', name: 'Q2 Enterprise Outreach', status: 'active', analytics: { emails_sent: 420, emails_opened: 168, emails_replied: 52, emails_bounced: 7 } },
-    { id: 'c2', name: 'Mid-Market ABM — May', status: 'active', analytics: { emails_sent: 280, emails_opened: 98, emails_replied: 24, emails_bounced: 4 } },
-    { id: 'c3', name: 'Re-engagement Wave 3', status: 'paused', analytics: { emails_sent: 147, emails_opened: 46, emails_replied: 13, emails_bounced: 3 } }
-  ];
-
-  // Demo call logs
-  const dispositions = [
-    { label: 'Connected', type: 'call_connected' },
-    { label: 'Voicemail', type: 'call_voicemail' },
-    { label: 'No Answer', type: 'call_attempt' },
-    { label: 'Connected', type: 'call_connected' },
-    { label: 'Connected', type: 'call_connected' }
-  ];
-  contacts.forEach((c, i) => {
-    const d = dispositions[i % dispositions.length];
-    state.callLogs.push({
-      id: `demo_${i}`,
-      contact: c.name,
-      phone: c.phone,
-      disposition: d.label,
-      duration: d.label === 'Connected' ? Math.floor(Math.random() * 600 + 60) : 0,
-      recordingUrl: d.label === 'Connected' ? '#demo-recording' : null,
-      notes: d.label === 'Connected' ? 'Showed interest in Q3 expansion' : '',
-      agent: 'Alex Johnson',
-      timestamp: new Date(Date.now() - i * 900000).toISOString(),
-      source: 'demo'
-    });
+io.on('connection', (socket) => {
+  socket.on('join_client', (clientId) => {
+    const c = getClient(clientId);
+    socket.join(`client:${c.id}`);
+    socket.emit('full_state', clientState(c));
   });
+});
 
-  // Demo activity feed
-  addActivity('email_reply', 'instantly', 'Reply from Sarah Chen — "Interested, let\'s chat"');
-  addActivity('call_connected', 'clay', 'Call connected with Marcus Webb (8m 22s)');
-  addActivity('email_sent', 'instantly', '42 emails sent in Q2 Enterprise Outreach');
-  addActivity('email_bounce', 'instantly', '2 emails bounced in Mid-Market ABM');
-  addActivity('call_voicemail', 'clay', 'Voicemail left for Priya Sharma');
-  addActivity('email_open', 'instantly', 'Email opened by Jake Torres');
-  addActivity('system', 'system', 'Dashboard initialized with demo data');
-
-  state.lastUpdated = new Date().toISOString();
-  io.emit('full_state', getPublicState());
-}
-
-// ─── Polling ───────────────────────────────────────────────────────────────────
-
-const POLL_MS = parseInt(process.env.POLL_INTERVAL_MS) || 30000;
-let pollTimer = null;
-
-function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  fetchInstantlyData(); // immediate first fetch
-  pollTimer = setInterval(fetchInstantlyData, POLL_MS);
-  console.log(`[Instantly] Polling every ${POLL_MS / 1000}s`);
-}
-
-// ─── Start ─────────────────────────────────────────────────────────────────────
-
+// ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n🚀 GTM Dashboard running at http://localhost:${PORT}`);
-  console.log(`   Webhook endpoint: POST http://localhost:${PORT}/webhook/clay`);
-  console.log(`   Demo data:        POST http://localhost:${PORT}/api/demo\n`);
-  startPolling();
-  addActivity('system', 'system', 'GTM Dashboard server started');
+  console.log(`\n🚀 GTM Dashboard running on port ${PORT}`);
+  console.log(`   Clay webhook:     POST /webhook/clay?client=YOUR_CLIENT`);
+  console.log(`   Instantly webhook: POST /webhook/instantly?client=YOUR_CLIENT`);
+  console.log(`   Dashboard:        GET  /?client=YOUR_CLIENT\n`);
 });
