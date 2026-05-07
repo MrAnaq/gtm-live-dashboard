@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GTM Realtime Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">GTM<span class="logo-accent">Live</span></span>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-instantly">Instantly</span>
+        <span class="badge badge-clay">Clay</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-group">
+        <div class="status-dot" id="ws-dot"></div>
+        <span class="status-label" id="ws-label">Connecting...</span>
+      </div>
+      <div class="last-updated" id="last-updated">—</div>
+      <button class="btn-refresh" id="btn-refresh" title="Force sync Instantly">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Sync
+      </button>
+      <button class="btn-demo" id="btn-demo">Load Demo</button>
+    </div>
+  </header>
+
+  <!-- Main layout -->
+  <main class="main">
+
+    <!-- ── Email Section ── -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span class="section-icon">📧</span> Email Activity
+        </h2>
+        <span class="section-source">Instantly + Clay</span>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card stat-blue" data-key="sent">
+          <div class="stat-label">Sent</div>
+          <div class="stat-value" id="stat-sent">0</div>
+          <div class="stat-trend" id="trend-sent"></div>
+        </div>
+        <div class="stat-card stat-green" data-key="opened">
+          <div class="stat-label">Opened</div>
+          <div class="stat-value" id="stat-opened">0</div>
+          <div class="stat-sub" id="rate-open">0%</div>
+        </div>
+        <div class="stat-card stat-purple" data-key="replied">
+          <div class="stat-label">Replied</div>
+          <div class="stat-value" id="stat-replied">0</div>
+          <div class="stat-sub" id="rate-reply">0%</div>
+        </div>
+        <div class="stat-card stat-red" data-key="bounced">
+          <div class="stat-label">Bounced</div>
+          <div class="stat-value" id="stat-bounced">0</div>
+          <div class="stat-sub" id="rate-bounce">0%</div>
+        </div>
+        <div class="stat-card stat-orange" data-key="clicked">
+          <div class="stat-label">Clicked</div>
+          <div class="stat-value" id="stat-clicked">0</div>
+        </div>
+        <div class="stat-card stat-gray" data-key="unsubscribed">
+          <div class="stat-label">Unsubscribed</div>
+          <div class="stat-value" id="stat-unsubscribed">0</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Charts Row ── -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Email Breakdown</div>
+        <div class="chart-wrap">
+          <canvas id="email-donut"></canvas>
+        </div>
+      </div>
+      <div class="chart-card chart-wide">
+        <div class="chart-title">Email Timeline (live)</div>
+        <div class="chart-wrap">
+          <canvas id="email-timeline"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Call Outcomes</div>
+        <div class="chart-wrap">
+          <canvas id="call-donut"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Call Section ── -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">
+          <span class="section-icon">📞</span> Call Activity
+        </h2>
+        <span class="section-source">Clay</span>
+      </div>
+
+      <div class="stats-grid stats-grid-4">
+        <div class="stat-card stat-blue">
+          <div class="stat-label">Total Calls</div>
+          <div class="stat-value" id="stat-calls-total">0</div>
+        </div>
+        <div class="stat-card stat-green">
+          <div class="stat-label">Connected</div>
+          <div class="stat-value" id="stat-calls-connected">0</div>
+          <div class="stat-sub" id="rate-connection">0%</div>
+        </div>
+        <div class="stat-card stat-yellow">
+          <div class="stat-label">Voicemail</div>
+          <div class="stat-value" id="stat-calls-voicemail">0</div>
+        </div>
+        <div class="stat-card stat-red">
+          <div class="stat-label">No Answer</div>
+          <div class="stat-value" id="stat-calls-noanswer">0</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Bottom panels ── -->
+    <div class="bottom-row">
+
+      <!-- Activity Feed -->
+      <div class="panel panel-feed">
+        <div class="panel-header">
+          <span class="panel-title">Live Activity</span>
+          <span class="live-dot"></span>
+          <span class="live-label">LIVE</span>
+        </div>
+        <div class="feed" id="activity-feed">
+          <div class="feed-empty">Waiting for events…</div>
+        </div>
+      </div>
+
+      <!-- Campaigns Table -->
+      <div class="panel panel-campaigns">
+        <div class="panel-header">
+          <span class="panel-title">Campaigns</span>
+          <span class="panel-source">Instantly</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="campaigns-table">
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>Status</th>
+                <th>Sent</th>
+                <th>Opens</th>
+                <th>Replies</th>
+                <th>Bounces</th>
+              </tr>
+            </thead>
+            <tbody id="campaigns-body">
+              <tr><td colspan="6" class="empty-row">No campaigns loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Call Logs Table ── -->
+    <div class="panel panel-calls">
+      <div class="panel-header">
+        <span class="panel-title">Call Log</span>
+        <span class="panel-source">Clay</span>
+        <span class="call-count" id="call-count">0 calls</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="calls-table">
+          <thead>
+            <tr>
+              <th>Contact</th>
+              <th>Phone</th>
+              <th>Disposition</th>
+              <th>Duration</th>
+              <th>Agent</th>
+              <th>Recording</th>
+              <th>Notes</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody id="calls-body">
+            <tr><td colspan="8" class="empty-row">No calls logged</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>
