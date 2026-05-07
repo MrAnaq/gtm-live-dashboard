@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GTM Live Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:     #0d0f14; --bg2: #13161e; --bg3: #1a1e2a;
+      --border: #242836; --border2: #2e3347;
+      --text:   #e2e6f0; --text2: #8892a4; --text3: #545e70;
+      --accent: #6c63ff; --blue: #3b82f6; --green: #22c55e;
+      --red: #ef4444; --yellow: #f59e0b; --orange: #f97316;
+      --purple: #a855f7; --gray: #64748b;
+      --r: 10px;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-size: 14px; line-height: 1.5; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg2); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* ── Header ── */
+    .hdr {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px;
+      background: rgba(13,15,20,.96); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .hdr-l { display: flex; align-items: center; gap: 16px; }
+    .logo  { display: flex; align-items: center; gap: 8px; }
+    .logo-icon { font-size: 20px; }
+    .logo-txt  { font-size: 18px; font-weight: 700; letter-spacing: -.5px; }
+    .logo-acc  { color: var(--accent); }
+    .badges { display: flex; gap: 8px; }
+    .badge { padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+    .b-instantly { background: rgba(59,130,246,.15); color: var(--blue); border: 1px solid rgba(59,130,246,.25); }
+    .b-clay      { background: rgba(108,99,255,.15); color: var(--accent); border: 1px solid rgba(108,99,255,.25); }
+    .hdr-r { display: flex; align-items: center; gap: 14px; }
+    .live-pill { display: flex; align-items: center; gap: 6px;
+      background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.2);
+      padding: 4px 10px; border-radius: 99px; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); box-shadow: 0 0 6px var(--green);
+      animation: pulse 2s ease-in-out infinite; }
+    .live-txt { font-size: 11px; font-weight: 700; color: var(--green); letter-spacing: 1px; }
+    .last-sync { font-size: 11px; color: var(--text3); }
+    .btn { display: flex; align-items: center; gap: 6px; padding: 6px 14px;
+      border-radius: var(--r); border: 1px solid var(--border2); font-size: 12px;
+      font-weight: 500; cursor: pointer; transition: all .15s; }
+    .btn-ghost { background: var(--bg3); color: var(--text2); }
+    .btn-ghost:hover { background: var(--border); color: var(--text); }
+    .btn-primary { background: rgba(108,99,255,.12); color: var(--accent); border-color: rgba(108,99,255,.3); }
+    .btn-primary:hover { background: rgba(108,99,255,.22); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    @keyframes spin  { to{transform:rotate(360deg)} }
+
+    /* ── Layout ── */
+    .main { padding: 20px 24px; max-width: 1640px; margin: 0 auto;
+      display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── Section header ── */
+    .sec-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .sec-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .sec-src { font-size: 11px; color: var(--text3); background: var(--bg3);
+      padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); }
+
+    /* ── Stat cards ── */
+    .cards { display: grid; gap: 12px; }
+    .cards-6 { grid-template-columns: repeat(6, 1fr); }
+    .cards-4 { grid-template-columns: repeat(4, 1fr); }
+    .card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 16px 18px;
+      position: relative; overflow: hidden;
+      transition: transform .15s, border-color .2s;
+      cursor: default;
+    }
+    .card:hover { transform: translateY(-2px); border-color: var(--border2); }
+    .card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; border-radius:var(--r) var(--r) 0 0; }
+    .c-blue::before   { background: var(--blue); }
+    .c-green::before  { background: var(--green); }
+    .c-purple::before { background: var(--purple); }
+    .c-red::before    { background: var(--red); }
+    .c-orange::before { background: var(--orange); }
+    .c-yellow::before { background: var(--yellow); }
+    .c-gray::before   { background: var(--gray); }
+    .card-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+    .card-val { font-size: 30px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+    .card-sub { font-size: 12px; color: var(--text2); margin-top: 3px; }
+    .card-delta { font-size: 11px; margin-top: 4px; }
+    .delta-up   { color: var(--green); }
+    .delta-down { color: var(--red); }
+
+    /* ── Charts row ── */
+    .charts-row { display: grid; grid-template-columns: 200px 1fr 200px; gap: 12px; }
+    .chart-card { background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 16px; }
+    .chart-title { font-size: 11px; font-weight: 600; color: var(--text2);
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+    .chart-wrap { position: relative; height: 170px; }
+    .chart-wrap canvas { max-height: 170px; }
+
+    /* ── Bottom row ── */
+    .bot-row { display: grid; grid-template-columns: 320px 1fr; gap: 12px; align-items: start; }
+
+    /* ── Panels ── */
+    .panel { background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--r); overflow: hidden; }
+    .panel-hdr { display: flex; align-items: center; gap: 8px;
+      padding: 11px 16px; border-bottom: 1px solid var(--border);
+      background: var(--bg3); }
+    .panel-title { font-size: 13px; font-weight: 600; flex: 1; }
+    .panel-src { font-size: 11px; color: var(--text3); }
+    .panel-count { font-size: 11px; color: var(--text2); margin-left: auto; }
+
+    /* ── Feed ── */
+    .feed { height: 440px; overflow-y: auto; padding: 4px 0; }
+    .feed-empty { padding: 28px 16px; color: var(--text3); font-size: 12px; text-align: center; }
+    .feed-item { display: flex; gap: 10px; padding: 8px 14px;
+      border-bottom: 1px solid var(--border); transition: background .12s; }
+    .feed-item:hover { background: var(--bg3); }
+    .feed-item:last-child { border-bottom: none; }
+    .fi-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+    .fi-body { flex: 1; min-width: 0; }
+    .fi-msg  { font-size: 12px; color: var(--text); line-height: 1.4;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fi-meta { display: flex; gap: 6px; margin-top: 2px; align-items: center; }
+    .fi-src  { font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .4px; padding: 1px 5px; border-radius: 4px; }
+    .src-instantly { background: rgba(59,130,246,.15); color: var(--blue); }
+    .src-clay      { background: rgba(108,99,255,.15); color: var(--accent); }
+    .src-system    { background: rgba(100,116,139,.15); color: var(--gray); }
+    .fi-time { font-size: 10px; color: var(--text3); }
+
+    /* ── Tables ── */
+    .tbl-wrap { overflow-x: auto; max-height: 440px; overflow-y: auto; }
+    .calls-tbl-wrap { max-height: 300px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      position: sticky; top: 0; z-index: 2;
+      background: var(--bg3); color: var(--text2);
+      padding: 8px 12px; text-align: left; font-weight: 600;
+      text-transform: uppercase; font-size: 10px; letter-spacing: .5px;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border);
+      color: var(--text); vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(255,255,255,.018); }
+    .empty-row { color: var(--text3); text-align: center; padding: 24px; font-size: 12px; }
+
+    /* ── Pills ── */
+    .pill { display: inline-flex; align-items: center; padding: 2px 8px;
+      border-radius: 99px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+    .p-active    { background: rgba(34,197,94,.12);  color: var(--green); }
+    .p-paused    { background: rgba(245,158,11,.12); color: var(--yellow); }
+    .p-completed { background: rgba(100,116,139,.12);color: var(--gray); }
+    .p-connected { background: rgba(34,197,94,.12);  color: var(--green); }
+    .p-voicemail { background: rgba(245,158,11,.12); color: var(--yellow); }
+    .p-noanswer  { background: rgba(239,68,68,.12);  color: var(--red); }
+
+    /* ── Recording link ── */
+    .rec { display: inline-flex; align-items: center; gap: 4px;
+      color: var(--accent); font-size: 11px; text-decoration: none;
+      padding: 2px 7px; border-radius: 6px;
+      background: rgba(108,99,255,.12); border: 1px solid rgba(108,99,255,.2);
+      transition: background .15s; cursor: pointer; }
+    .rec:hover { background: rgba(108,99,255,.22); }
+
+    /* ── Toast ── */
+    #toasts { position: fixed; bottom: 20px; right: 20px; display: flex;
+      flex-direction: column; gap: 8px; z-index: 999; }
+    .toast { background: var(--bg3); border: 1px solid var(--border2);
+      border-radius: var(--r); padding: 10px 16px; font-size: 12px;
+      max-width: 260px; animation: toastIn .2s ease; }
+    .toast-s { border-left: 3px solid var(--green); }
+    .toast-e { border-left: 3px solid var(--red); }
+    .toast-i { border-left: 3px solid var(--accent); }
+    @keyframes toastIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ── Recording modal ── */
+    .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      z-index: 200; align-items: center; justify-content: center; }
+    .modal-bg.open { display: flex; }
+    .modal { background: var(--bg2); border: 1px solid var(--border2);
+      border-radius: 14px; padding: 24px; width: 420px; max-width: 95vw; }
+    .modal-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .modal-close { cursor: pointer; color: var(--text3); font-size: 20px; line-height: 1; }
+    .modal-close:hover { color: var(--text); }
+    .audio-player { width: 100%; margin-bottom: 16px; }
+    .call-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .call-detail-item { background: var(--bg3); border-radius: 8px; padding: 10px 12px; }
+    .cdl { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+    .cdv { font-size: 13px; font-weight: 500; }
+
+    /* ── Responsive ── */
+    @media (max-width: 1100px) {
+      .cards-6 { grid-template-columns: repeat(3, 1fr); }
+      .charts-row { grid-template-columns: 1fr 1fr; }
+      .charts-row .chart-wide { grid-column: 1/-1; order:-1; }
+      .bot-row { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 700px) {
+      .cards-6, .cards-4 { grid-template-columns: repeat(2, 1fr); }
+      .badges { display: none; }
+      .last-sync { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<header class="hdr">
+  <div class="hdr-l">
+    <div class="logo">
+      <span class="logo-icon">⚡</span>
+      <span class="logo-txt">GTM<span class="logo-acc">Live</span></span>
+    </div>
+    <div class="badges">
+      <span class="badge b-instantly">Instantly</span>
+      <span class="badge b-clay">Clay</span>
+    </div>
+  </div>
+  <div class="hdr-r">
+    <div class="live-pill">
+      <span class="live-dot"></span>
+      <span class="live-txt">LIVE</span>
+    </div>
+    <span class="last-sync" id="last-sync">Synced just now</span>
+    <button class="btn btn-ghost" id="btn-sync">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" id="sync-icon"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Sync
+    </button>
+    <button class="btn btn-primary" id="btn-demo">Simulate Live</button>
+  </div>
+</header>
+
+<!-- ── Main ────────────────────────────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- Email Stats -->
+  <section>
+    <div class="sec-hdr">
+      <div class="sec-title">📧 Email Activity</div>
+      <span class="sec-src">Instantly + Clay</span>
+    </div>
+    <div class="cards cards-6">
+      <div class="card c-blue">
+        <div class="card-label">Sent</div>
+        <div class="card-val" id="v-sent">1,247</div>
+        <div class="card-delta delta-up" id="d-sent">↑ 42 today</div>
+      </div>
+      <div class="card c-green">
+        <div class="card-label">Opened</div>
+        <div class="card-val" id="v-opened">486</div>
+        <div class="card-sub" id="r-open">39.0% open rate</div>
+      </div>
+      <div class="card c-purple">
+        <div class="card-label">Replied</div>
+        <div class="card-val" id="v-replied">134</div>
+        <div class="card-sub" id="r-reply">10.7% reply rate</div>
+      </div>
+      <div class="card c-red">
+        <div class="card-label">Bounced</div>
+        <div class="card-val" id="v-bounced">18</div>
+        <div class="card-sub" id="r-bounce">1.4% bounce rate</div>
+      </div>
+      <div class="card c-orange">
+        <div class="card-label">Clicked</div>
+        <div class="card-val" id="v-clicked">298</div>
+        <div class="card-sub">23.9% CTR</div>
+      </div>
+      <div class="card c-gray">
+        <div class="card-label">Unsubscribed</div>
+        <div class="card-val" id="v-unsub">9</div>
+        <div class="card-sub">0.7% unsub rate</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Charts -->
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="chart-title">Email Breakdown</div>
+      <div class="chart-wrap"><canvas id="email-donut"></canvas></div>
+    </div>
+    <div class="chart-card chart-wide">
+      <div class="chart-title">Email Timeline — Last 15 Updates</div>
+      <div class="chart-wrap"><canvas id="email-line"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Call Outcomes</div>
+      <div class="chart-wrap"><canvas id="call-donut"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Call Stats -->
+  <section>
+    <div class="sec-hdr">
+      <div class="sec-title">📞 Call Activity</div>
+      <span class="sec-src">Clay</span>
+    </div>
+    <div class="cards cards-4">
+      <div class="card c-blue">
+        <div class="card-label">Total Calls</div>
+        <div class="card-val" id="v-calls">214</div>
+        <div class="card-delta delta-up" id="d-calls">↑ 12 today</div>
+      </div>
+      <div class="card c-green">
+        <div class="card-label">Connected</div>
+        <div class="card-val" id="v-connected">83</div>
+        <div class="card-sub" id="r-conn">38.8% connection rate</div>
+      </div>
+      <div class="card c-yellow">
+        <div class="card-label">Voicemail</div>
+        <div class="card-val" id="v-vm">71</div>
+        <div class="card-sub">33.2% of calls</div>
+      </div>
+      <div class="card c-red">
+        <div class="card-label">No Answer</div>
+        <div class="card-val" id="v-na">60</div>
+        <div class="card-sub">28.0% of calls</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bottom: Feed + Campaigns -->
+  <div class="bot-row">
+    <!-- Live Feed -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Live Activity</span>
+        <span class="live-dot" style="flex-shrink:0"></span>
+        <span class="live-txt">LIVE</span>
+      </div>
+      <div class="feed" id="feed"></div>
+    </div>
+
+    <!-- Campaigns -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Campaigns</span>
+        <span class="panel-src">Instantly</span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Campaign</th><th>Status</th><th>Sent</th>
+              <th>Opens</th><th>Replies</th><th>Bounces</th><th>Reply Rate</th>
+            </tr>
+          </thead>
+          <tbody id="camp-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Call Log -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-title">Call Log</span>
+      <span class="panel-src">Clay</span>
+      <span class="panel-count" id="call-count">0 calls</span>
+    </div>
+    <div class="tbl-wrap calls-tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Contact</th><th>Company</th><th>Phone</th>
+            <th>Disposition</th><th>Duration</th>
+            <th>Recording</th><th>Notes</th><th>Agent</th><th>Time</th>
+          </tr>
+        </thead>
+        <tbody id="calls-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<!-- Recording Modal -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <div class="modal-title">
+      <span>📞 Call Recording</span>
+      <span class="modal-close" id="modal-close">×</span>
+    </div>
+    <audio class="audio-player" id="modal-audio" controls>
+      <source src="" type="audio/mpeg" />
+    </audio>
+    <div class="call-detail-grid" id="modal-details"></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+'use strict';
+
+// ── Mock data ──────────────────────────────────────────────────────────────────
+
+const CAMPAIGNS = [
+  { name: 'Q2 Enterprise Outreach', status: 'active',    sent: 520, opens: 208, replies: 67, bounces: 9  },
+  { name: 'Mid-Market ABM — May',   status: 'active',    sent: 380, opens: 141, replies: 42, bounces: 5  },
+  { name: 'Re-engagement Wave 3',   status: 'paused',    sent: 210, opens: 73,  replies: 18, bounces: 3  },
+  { name: 'SaaS Founders Cold',     status: 'active',    sent: 137, opens: 64,  replies: 7,  bounces: 1  },
+];
+
+const CALL_LOGS = [
+  { contact:'Sarah Chen',   company:'TechCorp',     phone:'+1-415-555-0101', disposition:'Connected', duration:512, rec:true,  notes:'Interested in Q3 expansion, wants demo',  agent:'Alex J.',  ts: mins(5) },
+  { contact:'Marcus Webb',  company:'StartupCo',    phone:'+1-650-555-0192', disposition:'Voicemail', duration:0,   rec:false, notes:'Left VM about pricing page',             agent:'Jordan K.', ts: mins(12) },
+  { contact:'Priya Sharma', company:'SaaS.dev',     phone:'+1-408-555-0183', disposition:'Connected', duration:834, rec:true,  notes:'Champion confirmed — budget approved',   agent:'Alex J.',  ts: mins(28) },
+  { contact:'Jake Torres',  company:'Enterprise.io', phone:'+1-212-555-0174', disposition:'No Answer', duration:0,   rec:false, notes:'',                                       agent:'Sam R.',   ts: mins(35) },
+  { contact:'Emma Liu',     company:'GrowthLabs',   phone:'+1-617-555-0165', disposition:'Connected', duration:278, rec:true,  notes:'Requested security docs and SOC2 report', agent:'Jordan K.', ts: mins(51) },
+  { contact:'Raj Patel',    company:'B2B Cloud',    phone:'+1-737-555-0156', disposition:'Voicemail', duration:0,   rec:false, notes:'',                                       agent:'Sam R.',   ts: mins(63) },
+  { contact:'Nina Reyes',   company:'Fintech Hub',  phone:'+1-312-555-0147', disposition:'Connected', duration:391, rec:true,  notes:'Moving fast — asked for contract by EOW', agent:'Alex J.',  ts: mins(78) },
+  { contact:'Oscar Brown',  company:'CloudScale',   phone:'+1-512-555-0138', disposition:'No Answer', duration:0,   rec:false, notes:'',                                       agent:'Sam R.',   ts: mins(95) },
+];
+
+const FEED_SEED = [
+  { type:'email_reply',    src:'instantly', msg:'Reply from Sarah Chen — "Sounds great, let\'s connect this week"' },
+  { type:'call_connected', src:'clay',      msg:'Call connected with Priya Sharma (13m 54s) — budget approved' },
+  { type:'email_sent',     src:'instantly', msg:'42 new emails sent — Q2 Enterprise Outreach' },
+  { type:'email_open',     src:'instantly', msg:'Email opened by Jake Torres at Enterprise.io' },
+  { type:'call_voicemail', src:'clay',      msg:'Voicemail left for Marcus Webb (StartupCo)' },
+  { type:'email_reply',    src:'instantly', msg:'Reply from Nina Reyes — "Can you send the deck?"' },
+  { type:'email_bounce',   src:'instantly', msg:'2 bounces in Mid-Market ABM — May campaign' },
+  { type:'call_connected', src:'clay',      msg:'Call connected with Emma Liu (4m 38s) — security review required' },
+  { type:'email_open',     src:'instantly', msg:'Email opened by Raj Patel at B2B Cloud' },
+  { type:'call_attempt',   src:'clay',      msg:'No answer — Oscar Brown (CloudScale) — attempt 2' },
+  { type:'system',         src:'system',    msg:'Dashboard connected · Clay webhook active · Instantly synced' },
+];
+
+const LIVE_EVENTS = [
+  { type:'email_reply',    src:'instantly', msg:'New reply from David Kim — "Interested, send me pricing"' },
+  { type:'email_open',     src:'instantly', msg:'Email opened by Lisa Monroe at Apex Corp' },
+  { type:'call_connected', src:'clay',      msg:'Call connected with Carlos Vega (6m 11s)' },
+  { type:'email_sent',     src:'instantly', msg:'18 emails sent — SaaS Founders Cold campaign' },
+  { type:'email_bounce',   src:'instantly', msg:'Bounce detected — junk@fakecorp.net' },
+  { type:'call_voicemail', src:'clay',      msg:'Voicemail left for Tanya Frost (NovaSoft)' },
+  { type:'email_reply',    src:'instantly', msg:'Reply from Ben Okafor — "Who referred you?"' },
+  { type:'email_open',     src:'instantly', msg:'Email opened by Maria Santos — 3rd open this week' },
+  { type:'call_connected', src:'clay',      msg:'Call connected with Ryan Cho (11m 05s) — deal advancing' },
+  { type:'email_sent',     src:'instantly', msg:'31 emails sent — Re-engagement Wave 3' },
+];
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let stats = { sent:1247, opened:486, replied:134, bounced:18, clicked:298, unsub:9,
+              calls:214, connected:83, vm:71, na:60 };
+let liveIdx = 0;
+let simRunning = false;
+
+// ── Utils ──────────────────────────────────────────────────────────────────────
+function mins(n) { return new Date(Date.now() - n * 60000).toISOString(); }
+function fmt(n)  { return n.toLocaleString(); }
+function pct(a,b){ return b > 0 ? ((a/b)*100).toFixed(1) : '0.0'; }
+function dur(s)  { if (!s) return '—'; const m=Math.floor(s/60),r=s%60; return m?`${m}m ${r}s`:`${r}s`; }
+function timeAgo(iso) {
+  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (s < 60)  return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  return `${Math.floor(s/3600)}h ago`;
+}
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+const ICONS = {
+  email_sent:'📤', email_reply:'↩️', email_bounce:'⚠️', email_open:'👁️',
+  unsubscribe:'🚫', call_connected:'✅', call_voicemail:'📬', call_attempt:'📵', system:'⚙️'
+};
+
+// ── Charts ─────────────────────────────────────────────────────────────────────
+const emailDonut = new Chart(document.getElementById('email-donut'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Opened','Replied','Bounced','Not opened'],
+    datasets: [{
+      data: [486, 134, 18, 609],
+      backgroundColor: ['#22c55e','#a855f7','#ef4444','#1e2535'],
+      borderColor: '#13161e', borderWidth: 2, hoverOffset: 4
+    }]
+  },
+  options: {
+    cutout: '70%',
+    plugins: {
+      legend: { display: true, position: 'bottom',
+        labels: { color:'#8892a4', font:{size:10}, padding:8, boxWidth:10 } },
+      tooltip: { callbacks: { label: c => ` ${c.label}: ${c.raw.toLocaleString()}` } }
+    },
+    animation: { duration: 500 }
+  }
+});
+
+const callDonut = new Chart(document.getElementById('call-donut'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Connected','Voicemail','No Answer'],
+    datasets: [{
+      data: [83, 71, 60],
+      backgroundColor: ['#22c55e','#f59e0b','#ef4444'],
+      borderColor: '#13161e', borderWidth: 2, hoverOffset: 4
+    }]
+  },
+  options: {
+    cutout: '70%',
+    plugins: {
+      legend: { display: true, position: 'bottom',
+        labels: { color:'#8892a4', font:{size:10}, padding:8, boxWidth:10 } }
+    },
+    animation: { duration: 500 }
+  }
+});
+
+// Timeline — seed with 10 historical points
+const tlLabels = [];
+const tlSent = [], tlOpened = [], tlReplied = [], tlBounced = [];
+for (let i = 9; i >= 0; i--) {
+  const t = new Date(Date.now() - i * 90000);
+  tlLabels.push(t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+  tlSent.push(Math.round(1247 - i * 14 + Math.random()*5));
+  tlOpened.push(Math.round(486 - i * 5 + Math.random()*3));
+  tlReplied.push(Math.round(134 - i * 1.5 + Math.random()*2));
+  tlBounced.push(Math.round(18 - i * 0.2 + Math.random()));
+}
+
+const emailLine = new Chart(document.getElementById('email-line'), {
+  type: 'line',
+  data: {
+    labels: tlLabels,
+    datasets: [
+      { label:'Sent',    data:tlSent,    borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,.08)', tension:.4, fill:true,  pointRadius:2, borderWidth:2 },
+      { label:'Opened',  data:tlOpened,  borderColor:'#22c55e', backgroundColor:'transparent',          tension:.4, fill:false, pointRadius:2, borderWidth:2 },
+      { label:'Replied', data:tlReplied, borderColor:'#a855f7', backgroundColor:'transparent',          tension:.4, fill:false, pointRadius:2, borderWidth:2 },
+      { label:'Bounced', data:tlBounced, borderColor:'#ef4444', backgroundColor:'transparent',          tension:.4, fill:false, pointRadius:2, borderWidth:2 }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode:'index', intersect:false },
+    scales: {
+      x: { grid:{color:'#1a1e2a'}, ticks:{color:'#545e70', maxTicksLimit:8, font:{size:10}} },
+      y: { grid:{color:'#1a1e2a'}, ticks:{color:'#545e70', font:{size:10}}, beginAtZero:false }
+    },
+    plugins: {
+      legend: { display:true, labels:{color:'#8892a4', font:{size:10}, padding:12, boxWidth:12, usePointStyle:true} }
+    },
+    animation: { duration:300 }
+  }
+});
+
+function pushTimeline() {
+  const label = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  tlLabels.push(label);
+  tlSent.push(stats.sent); tlOpened.push(stats.opened);
+  tlReplied.push(stats.replied); tlBounced.push(stats.bounced);
+  if (tlLabels.length > 20) {
+    tlLabels.shift(); tlSent.shift(); tlOpened.shift(); tlReplied.shift(); tlBounced.shift();
+  }
+  emailLine.update();
+}
+
+function updateDonut() {
+  const rest = Math.max(0, stats.sent - stats.opened - stats.replied - stats.bounced);
+  emailDonut.data.datasets[0].data = [stats.opened, stats.replied, stats.bounced, rest];
+  emailDonut.update();
+  callDonut.data.datasets[0].data = [stats.connected, stats.vm, stats.na];
+  callDonut.update();
+}
+
+// ── Render stat cards ──────────────────────────────────────────────────────────
+function renderStats() {
+  document.getElementById('v-sent').textContent    = fmt(stats.sent);
+  document.getElementById('v-opened').textContent  = fmt(stats.opened);
+  document.getElementById('v-replied').textContent = fmt(stats.replied);
+  document.getElementById('v-bounced').textContent = fmt(stats.bounced);
+  document.getElementById('v-clicked').textContent = fmt(stats.clicked);
+  document.getElementById('v-unsub').textContent   = fmt(stats.unsub);
+  document.getElementById('r-open').textContent    = `${pct(stats.opened, stats.sent)}% open rate`;
+  document.getElementById('r-reply').textContent   = `${pct(stats.replied, stats.sent)}% reply rate`;
+  document.getElementById('r-bounce').textContent  = `${pct(stats.bounced, stats.sent)}% bounce rate`;
+  document.getElementById('v-calls').textContent      = fmt(stats.calls);
+  document.getElementById('v-connected').textContent  = fmt(stats.connected);
+  document.getElementById('v-vm').textContent         = fmt(stats.vm);
+  document.getElementById('v-na').textContent         = fmt(stats.na);
+  document.getElementById('r-conn').textContent       = `${pct(stats.connected, stats.calls)}% connection rate`;
+}
+
+// ── Feed ───────────────────────────────────────────────────────────────────────
+const $feed = document.getElementById('feed');
+
+function addFeedItem(item, prepend = true) {
+  const icon    = ICONS[item.type] || '•';
+  const srcCls  = `src-${item.src}`;
+  const timeStr = item.time || 'just now';
+  const div = document.createElement('div');
+  div.className = 'feed-item';
+  div.innerHTML = `
+    <span class="fi-icon">${icon}</span>
+    <div class="fi-body">
+      <div class="fi-msg">${esc(item.msg)}</div>
+      <div class="fi-meta">
+        <span class="fi-src ${srcCls}">${esc(item.src)}</span>
+        <span class="fi-time">${timeStr}</span>
+      </div>
+    </div>`;
+  if (prepend) {
+    $feed.insertBefore(div, $feed.firstChild);
+    while ($feed.children.length > 80) $feed.removeChild($feed.lastChild);
+  } else {
+    $feed.appendChild(div);
+  }
+}
+
+function seedFeed() {
+  $feed.innerHTML = '';
+  FEED_SEED.forEach((e, i) => {
+    addFeedItem({ ...e, time: i === 0 ? 'just now' : `${(i * 3) + Math.floor(Math.random()*2)}m ago` }, false);
+  });
+}
+
+// ── Campaigns ─────────────────────────────────────────────────────────────────
+function renderCampaigns() {
+  document.getElementById('camp-body').innerHTML = CAMPAIGNS.map(c => {
+    const sCls = c.status === 'active' ? 'p-active' : c.status === 'paused' ? 'p-paused' : 'p-completed';
+    const rr   = ((c.replies / c.sent) * 100).toFixed(1);
+    return `
+      <tr>
+        <td><strong>${esc(c.name)}</strong></td>
+        <td><span class="pill ${sCls}">${esc(c.status)}</span></td>
+        <td>${fmt(c.sent)}</td>
+        <td>${fmt(c.opens)}</td>
+        <td>${fmt(c.replies)}</td>
+        <td>${fmt(c.bounces)}</td>
+        <td><strong style="color:var(--green)">${rr}%</strong></td>
+      </tr>`;
+  }).join('');
+}
+
+// ── Call Logs ──────────────────────────────────────────────────────────────────
+function renderCallLogs(logs) {
+  document.getElementById('call-count').textContent = `${logs.length} calls`;
+  document.getElementById('calls-body').innerHTML = logs.map(l => {
+    const disp = l.disposition.toLowerCase();
+    const pCls = disp.includes('connect') ? 'p-connected' : disp.includes('voice') ? 'p-voicemail' : 'p-noanswer';
+    const recBtn = l.rec
+      ? `<span class="rec" onclick="openModal(${JSON.stringify(l).replace(/"/g,'&quot;')})">▶ Play</span>`
+      : '<span style="color:var(--text3)">—</span>';
+    return `
+      <tr>
+        <td><strong>${esc(l.contact)}</strong></td>
+        <td style="color:var(--text2)">${esc(l.company)}</td>
+        <td style="color:var(--text2)">${esc(l.phone)}</td>
+        <td><span class="pill ${pCls}">${esc(l.disposition)}</span></td>
+        <td style="font-variant-numeric:tabular-nums">${dur(l.duration)}</td>
+        <td>${recBtn}</td>
+        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)" title="${esc(l.notes)}">${esc(l.notes) || '—'}</td>
+        <td style="color:var(--text2)">${esc(l.agent)}</td>
+        <td style="color:var(--text3);white-space:nowrap">${timeAgo(l.ts)}</td>
+      </tr>`;
+  }).join('');
+}
+
+// ── Recording modal ────────────────────────────────────────────────────────────
+function openModal(log) {
+  document.getElementById('modal-audio').src = ''; // demo — no real audio
+  document.getElementById('modal-details').innerHTML = `
+    <div class="call-detail-item"><div class="cdl">Contact</div><div class="cdv">${esc(log.contact)}</div></div>
+    <div class="call-detail-item"><div class="cdl">Company</div><div class="cdv">${esc(log.company)}</div></div>
+    <div class="call-detail-item"><div class="cdl">Disposition</div><div class="cdv">${esc(log.disposition)}</div></div>
+    <div class="call-detail-item"><div class="cdl">Duration</div><div class="cdv">${dur(log.duration)}</div></div>
+    <div class="call-detail-item" style="grid-column:1/-1"><div class="cdl">Notes</div><div class="cdv">${esc(log.notes) || '—'}</div></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+document.getElementById('modal-close').addEventListener('click', () => {
+  document.getElementById('modal').classList.remove('open');
+});
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) document.getElementById('modal').classList.remove('open');
+});
+
+// ── Simulate live updates ──────────────────────────────────────────────────────
+let simInterval = null;
+
+document.getElementById('btn-demo').addEventListener('click', () => {
+  if (simRunning) {
+    clearInterval(simInterval);
+    simRunning = false;
+    document.getElementById('btn-demo').textContent = 'Simulate Live';
+    toast('Simulation stopped', 'info');
+    return;
+  }
+  simRunning = true;
+  document.getElementById('btn-demo').textContent = 'Stop Simulation';
+  toast('Live simulation started — watch the numbers update!', 'success');
+  runSimStep();
+  simInterval = setInterval(runSimStep, 3000);
+});
+
+function runSimStep() {
+  const event = LIVE_EVENTS[liveIdx % LIVE_EVENTS.length];
+  liveIdx++;
+
+  // update stats based on event type
+  if (event.type === 'email_sent')     { stats.sent    += Math.floor(Math.random()*8+1); }
+  if (event.type === 'email_open')     { stats.opened  += Math.floor(Math.random()*3+1); }
+  if (event.type === 'email_reply')    { stats.replied += 1; }
+  if (event.type === 'email_bounce')   { stats.bounced += 1; }
+  if (event.type === 'call_connected') { stats.calls++; stats.connected++; }
+  if (event.type === 'call_voicemail') { stats.calls++; stats.vm++; }
+  if (event.type === 'call_attempt')   { stats.calls++; stats.na++; }
+
+  flashCard(event.type);
+  renderStats();
+  updateDonut();
+  pushTimeline();
+  addFeedItem({ ...event, time: 'just now' }, true);
+  document.getElementById('last-sync').textContent = 'Synced just now';
+}
+
+function flashCard(type) {
+  const map = {
+    email_sent:'v-sent', email_open:'v-opened', email_reply:'v-replied',
+    email_bounce:'v-bounced', call_connected:'v-connected', call_voicemail:'v-vm', call_attempt:'v-na'
+  };
+  const id = map[type];
+  if (!id) return;
+  const el = document.getElementById(id);
+  el.style.color = '#22c55e';
+  setTimeout(() => el.style.color = '', 600);
+}
+
+// ── Sync button ────────────────────────────────────────────────────────────────
+document.getElementById('btn-sync').addEventListener('click', function () {
+  document.getElementById('sync-icon').style.animation = 'spin .7s linear infinite';
+  setTimeout(() => {
+    document.getElementById('sync-icon').style.animation = '';
+    document.getElementById('last-sync').textContent = 'Synced just now';
+    toast('Instantly data synced', 'success');
+  }, 900);
+});
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'i') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type[0]}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+renderStats();
+renderCampaigns();
+renderCallLogs(CALL_LOGS);
+seedFeed();
+updateDonut();
+
+// refresh timeAgo every 30s
+setInterval(() => renderCallLogs(CALL_LOGS), 30000);
+</script>
+</body>
+</html>
