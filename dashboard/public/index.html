@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GTM Live Dashboard</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --text: #e8eaf6;
+    --muted: #8b90a7;
+    --accent: #6c63ff;
+    --green: #22c55e;
+    --blue: #3b82f6;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --orange: #f97316;
+    --purple: #a855f7;
+    --cyan: #06b6d4;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--cyan));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+
+  .header-center {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .client-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .client-badge span { color: var(--accent); font-weight: 600; }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .status-dot.offline { background: var(--red); box-shadow: 0 0 6px var(--red); animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .status-text { font-size: 12px; color: var(--muted); }
+
+  .btn {
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+
+  /* ── Client selector banner (when no client in URL) ── */
+  #client-prompt {
+    display: none;
+    background: linear-gradient(135deg, #1e1b4b, #1a1d27);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 24px;
+    text-align: center;
+  }
+  #client-prompt p { color: var(--muted); margin-bottom: 12px; font-size: 13px; }
+  #client-prompt .prompt-row {
+    display: flex; gap: 8px; justify-content: center; align-items: center;
+  }
+  #client-prompt input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: var(--text);
+    font-size: 13px;
+    width: 240px;
+  }
+  #client-prompt input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+  /* ── Layout ── */
+  main { padding: 20px 24px; max-width: 1600px; margin: 0 auto; }
+
+  /* ── Last updated bar ── */
+  .last-updated {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ── Section labels ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 10px;
+    margin-top: 20px;
+  }
+
+  /* ── Stat cards ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+  }
+  .stat-card.green::before  { background: var(--green);  }
+  .stat-card.blue::before   { background: var(--blue);   }
+  .stat-card.yellow::before { background: var(--yellow); }
+  .stat-card.red::before    { background: var(--red);    }
+  .stat-card.orange::before { background: var(--orange); }
+  .stat-card.purple::before { background: var(--purple); }
+  .stat-card.cyan::before   { background: var(--cyan);   }
+  .stat-card.accent::before { background: var(--accent); }
+
+  .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .stat-value.small { font-size: 22px; }
+  .stat-sub { font-size: 11px; color: var(--muted); }
+
+  .stat-flash {
+    animation: flash 0.6s ease-out;
+  }
+  @keyframes flash {
+    0%   { background: rgba(108, 99, 255, 0.2); }
+    100% { background: transparent; }
+  }
+
+  /* ── Charts row ── */
+  .charts-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+  @media (max-width: 900px) {
+    .charts-row { grid-template-columns: 1fr; }
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .chart-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .chart-wrap {
+    position: relative;
+    display: flex;
+    justify-content: center;
+  }
+  .chart-wrap canvas { max-height: 180px; }
+  .timeline-wrap canvas { max-height: 160px; width: 100% !important; }
+
+  /* ── Bottom grid ── */
+  .bottom-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 900px) {
+    .bottom-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── Activity feed ── */
+  .feed-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    max-height: 420px;
+    display: flex;
+    flex-direction: column;
+  }
+  .feed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .feed-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .feed-count {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .feed-list {
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .feed-list::-webkit-scrollbar { width: 4px; }
+  .feed-list::-webkit-scrollbar-track { background: transparent; }
+  .feed-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .feed-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surface2);
+    border: 1px solid transparent;
+    transition: border-color 0.2s;
+  }
+  .feed-item.new-item {
+    animation: slideIn 0.3s ease-out;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .feed-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .feed-content { flex: 1; min-width: 0; }
+  .feed-msg { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feed-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+  .source-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .source-instantly { background: #1e3a5f; color: #60a5fa; }
+  .source-clay      { background: #1e3325; color: #4ade80; }
+  .source-bland     { background: #2e1e4f; color: #c084fc; }
+  .source-system    { background: #2e2e1e; color: #fbbf24; }
+  .feed-time { font-size: 10px; color: var(--muted); }
+
+  /* ── Call logs ── */
+  .calls-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    max-height: 420px;
+    display: flex;
+    flex-direction: column;
+  }
+  .calls-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .calls-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .calls-table-wrap {
+    overflow-y: auto;
+    flex: 1;
+  }
+  .calls-table-wrap::-webkit-scrollbar { width: 4px; }
+  .calls-table-wrap::-webkit-scrollbar-track { background: transparent; }
+  .calls-table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    text-align: left;
+    padding: 6px 8px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 1;
+  }
+  td { padding: 8px 8px; border-bottom: 1px solid rgba(46,51,80,0.5); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+  tr.new-row td { animation: rowFlash 0.8s ease-out; }
+  @keyframes rowFlash {
+    0%   { background: rgba(108, 99, 255, 0.15); }
+    100% { background: transparent; }
+  }
+
+  .disp-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .disp-connected { background: #052e16; color: #4ade80; }
+  .disp-voicemail  { background: #1e1b4b; color: #a5b4fc; }
+  .disp-noanswer   { background: #1c1917; color: #a8a29e; }
+
+  .play-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--accent);
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .play-btn:hover { background: var(--accent); color: #fff; }
+
+  /* ── Recording modal ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    width: 480px;
+    max-width: 95vw;
+    position: relative;
+  }
+  .modal-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    width: 28px; height: 28px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  .modal-row { display: flex; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+  .modal-key { color: var(--muted); min-width: 90px; }
+  .modal-val { color: var(--text); }
+  .modal-notes {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 12px;
+    white-space: pre-wrap;
+  }
+  audio { width: 100%; margin-top: 12px; border-radius: 8px; }
+
+  /* ── Demo mode ── */
+  #demo-bar {
+    display: none;
+    background: linear-gradient(90deg, #1e1b4b, #1a2740);
+    border-bottom: 1px solid #3b3a7a;
+    padding: 6px 24px;
+    font-size: 11px;
+    color: #a5b4fc;
+    text-align: center;
+  }
+  #demo-bar.active { display: block; }
+
+  /* ── Empty state ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    gap: 8px;
+  }
+  .empty-state .empty-icon { font-size: 32px; }
+  .empty-state p { font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- Demo banner -->
+<div id="demo-bar">
+  Demo mode active — simulating live incoming data &nbsp;|&nbsp;
+  <button onclick="stopDemo()" style="background:none;border:none;color:#818cf8;cursor:pointer;font-size:11px;text-decoration:underline;">Stop</button>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    GTM Live Dashboard
+  </div>
+  <div class="header-center">
+    <div class="client-badge">Client: <span id="client-name-display">—</span></div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot offline" id="status-dot"></div>
+    <span class="status-text" id="status-text">Connecting…</span>
+    <button class="btn btn-outline" onclick="toggleDemo()">▶ Simulate Live</button>
+    <button class="btn btn-accent" onclick="resetStats()">Reset</button>
+  </div>
+</header>
+
+<!-- Client prompt (shown when no ?client= in URL) -->
+<div id="client-prompt">
+  <p>No client specified in URL. Enter a client ID to view their dashboard, or use the URL format: <code>/?client=acme-corp</code></p>
+  <div class="prompt-row">
+    <input type="text" id="client-input" placeholder="e.g. acme-corp" />
+    <button class="btn btn-accent" onclick="goToClient()">Go →</button>
+  </div>
+</div>
+
+<main>
+  <div class="last-updated">
+    Last updated: <span id="last-updated-text">—</span>
+  </div>
+
+  <!-- Email section -->
+  <div class="section-label">Email Activity</div>
+  <div class="stats-grid" id="email-stats-grid">
+    <div class="stat-card blue">
+      <div class="stat-label">Sent</div>
+      <div class="stat-value" id="stat-sent">0</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Opened</div>
+      <div class="stat-value" id="stat-opened">0</div>
+      <div class="stat-sub" id="stat-openrate">0% open rate</div>
+    </div>
+    <div class="stat-card accent">
+      <div class="stat-label">Replied</div>
+      <div class="stat-value" id="stat-replied">0</div>
+      <div class="stat-sub" id="stat-replyrate">0% reply rate</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Bounced</div>
+      <div class="stat-value" id="stat-bounced">0</div>
+      <div class="stat-sub" id="stat-bouncerate">0% bounce rate</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Unsubscribed</div>
+      <div class="stat-value small" id="stat-unsub">0</div>
+    </div>
+    <div class="stat-card cyan">
+      <div class="stat-label">Clicked</div>
+      <div class="stat-value" id="stat-clicked">0</div>
+    </div>
+  </div>
+
+  <!-- Call section -->
+  <div class="section-label">Call Activity</div>
+  <div class="stats-grid" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));">
+    <div class="stat-card green">
+      <div class="stat-label">Total Calls</div>
+      <div class="stat-value" id="stat-calls-total">0</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Connected</div>
+      <div class="stat-value" id="stat-calls-connected">0</div>
+      <div class="stat-sub" id="stat-connrate">0% connect rate</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Voicemail</div>
+      <div class="stat-value" id="stat-calls-vm">0</div>
+    </div>
+    <div class="stat-card yellow">
+      <div class="stat-label">No Answer</div>
+      <div class="stat-value" id="stat-calls-na">0</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="section-label">Analytics</div>
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="chart-title">Email Breakdown</div>
+      <div class="chart-wrap">
+        <canvas id="emailChart" width="180" height="180"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Live Activity Timeline</div>
+      <div class="timeline-wrap">
+        <canvas id="timelineChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Call Outcomes</div>
+      <div class="chart-wrap">
+        <canvas id="callChart" width="180" height="180"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity + Call Logs -->
+  <div class="section-label">Recent Activity</div>
+  <div class="bottom-grid">
+
+    <!-- Activity Feed -->
+    <div class="feed-card">
+      <div class="feed-header">
+        <div class="feed-title">Activity Feed</div>
+        <div class="feed-count" id="feed-count">0 events</div>
+      </div>
+      <div class="feed-list" id="feed-list">
+        <div class="empty-state">
+          <div class="empty-icon">📡</div>
+          <p>Waiting for incoming events…<br/>Webhooks will appear here in real time.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Call Logs -->
+    <div class="calls-card">
+      <div class="calls-header">
+        <div class="calls-title">Call Log</div>
+        <div class="feed-count" id="calls-count">0 calls</div>
+      </div>
+      <div class="calls-table-wrap">
+        <table id="calls-table">
+          <thead>
+            <tr>
+              <th>Contact</th>
+              <th>Disposition</th>
+              <th>Duration</th>
+              <th>Agent</th>
+              <th>Recording</th>
+            </tr>
+          </thead>
+          <tbody id="calls-tbody">
+            <tr>
+              <td colspan="5">
+                <div class="empty-state">
+                  <div class="empty-icon">📞</div>
+                  <p>No calls yet. Call logs will appear here as they come in.</p>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- bottom-grid -->
+</main>
+
+<!-- Recording Modal -->
+<div class="modal-overlay" id="recording-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-title" id="modal-contact">—</div>
+    <div class="modal-sub" id="modal-company">—</div>
+    <div class="modal-row"><span class="modal-key">Phone</span><span class="modal-val" id="modal-phone">—</span></div>
+    <div class="modal-row"><span class="modal-key">Disposition</span><span class="modal-val" id="modal-disp">—</span></div>
+    <div class="modal-row"><span class="modal-key">Duration</span><span class="modal-val" id="modal-dur">—</span></div>
+    <div class="modal-row"><span class="modal-key">Agent</span><span class="modal-val" id="modal-agent">—</span></div>
+    <div class="modal-row"><span class="modal-key">Time</span><span class="modal-val" id="modal-time">—</span></div>
+    <div id="modal-audio-wrap" style="display:none;">
+      <audio id="modal-audio" controls></audio>
+    </div>
+    <div class="modal-notes" id="modal-notes"></div>
+  </div>
+</div>
+
+<script>
+// ── Client ID from URL ────────────────────────────────────────────────────────
+const urlParams  = new URLSearchParams(window.location.search);
+let   clientId   = (urlParams.get('client') || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+
+if (!clientId) {
+  document.getElementById('client-prompt').style.display = 'block';
+  clientId = 'default';
+}
+
+document.getElementById('client-name-display').textContent = clientId;
+document.title = `GTM Dashboard — ${clientId}`;
+
+function goToClient() {
+  const val = document.getElementById('client-input').value.trim();
+  if (val) window.location.href = `/?client=${encodeURIComponent(val)}`;
+}
+document.getElementById('client-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') goToClient();
+});
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let emailStats = { sent:0, opened:0, replied:0, bounced:0, unsubscribed:0, clicked:0, openRate:0, replyRate:0, bounceRate:0 };
+let callStats  = { total:0, connected:0, voicemail:0, noAnswer:0, connectionRate:0 };
+let callLogs   = [];
+let activityFeed = [];
+
+// ── Socket.io ─────────────────────────────────────────────────────────────────
+// Detect server URL: same origin in production, localhost:3000 in dev
+const serverUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? `http://${window.location.hostname}:3000`
+  : window.location.origin;
+
+let socket;
+let connected = false;
+
+function initSocket() {
+  try {
+    socket = io(serverUrl, { transports: ['websocket', 'polling'], timeout: 5000 });
+
+    socket.on('connect', () => {
+      connected = true;
+      setStatus(true);
+      socket.emit('join_client', clientId);
+    });
+
+    socket.on('disconnect', () => {
+      connected = false;
+      setStatus(false);
+    });
+
+    socket.on('full_state', (state) => {
+      emailStats = state.emailStats;
+      callStats  = state.callStats;
+      callLogs   = state.callLogs   || [];
+      activityFeed = state.activityFeed || [];
+      renderAll();
+      if (state.lastUpdated) updateTimestamp(state.lastUpdated);
+    });
+
+    socket.on('stats_update', (data) => {
+      emailStats = data.emailStats;
+      callStats  = data.callStats;
+      renderEmailStats();
+      renderCallStats();
+      updateCharts();
+      updateTimestamp(new Date().toISOString());
+    });
+
+    socket.on('activity', (item) => {
+      activityFeed.unshift(item);
+      if (activityFeed.length > 100) activityFeed.pop();
+      prependFeedItem(item, true);
+      document.getElementById('feed-count').textContent = `${activityFeed.length} events`;
+      pushTimeline(item.type);
+    });
+
+    socket.on('call_log_new', (log) => {
+      callLogs.unshift(log);
+      if (callLogs.length > 200) callLogs.pop();
+      prependCallRow(log, true);
+      document.getElementById('calls-count').textContent = `${callLogs.length} calls`;
+    });
+
+  } catch(e) {
+    setStatus(false);
+  }
+}
+
+function setStatus(online) {
+  const dot  = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  if (online) {
+    dot.classList.remove('offline');
+    text.textContent = 'Live';
+  } else {
+    dot.classList.add('offline');
+    text.textContent = 'Disconnected';
+  }
+}
+
+initSocket();
+
+// ── Render helpers ────────────────────────────────────────────────────────────
+function renderAll() {
+  renderEmailStats();
+  renderCallStats();
+  renderFeed();
+  renderCallLogs();
+  updateCharts();
+}
+
+function flashEl(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('stat-flash');
+  void el.offsetWidth;
+  el.classList.add('stat-flash');
+}
+
+function setVal(id, val) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(val)) {
+    el.textContent = val;
+    el.closest('.stat-card')?.classList.add('stat-flash');
+    setTimeout(() => el.closest('.stat-card')?.classList.remove('stat-flash'), 600);
+  }
+}
+
+function renderEmailStats() {
+  setVal('stat-sent',    emailStats.sent);
+  setVal('stat-opened',  emailStats.opened);
+  setVal('stat-replied', emailStats.replied);
+  setVal('stat-bounced', emailStats.bounced);
+  setVal('stat-unsub',   emailStats.unsubscribed);
+  setVal('stat-clicked', emailStats.clicked);
+  document.getElementById('stat-openrate').textContent   = `${emailStats.openRate}% open rate`;
+  document.getElementById('stat-replyrate').textContent  = `${emailStats.replyRate}% reply rate`;
+  document.getElementById('stat-bouncerate').textContent = `${emailStats.bounceRate}% bounce rate`;
+}
+
+function renderCallStats() {
+  setVal('stat-calls-total',     callStats.total);
+  setVal('stat-calls-connected', callStats.connected);
+  setVal('stat-calls-vm',        callStats.voicemail);
+  setVal('stat-calls-na',        callStats.noAnswer);
+  document.getElementById('stat-connrate').textContent = `${callStats.connectionRate}% connect rate`;
+}
+
+function updateTimestamp(iso) {
+  const d = new Date(iso);
+  document.getElementById('last-updated-text').textContent = d.toLocaleTimeString();
+}
+
+// ── Feed ──────────────────────────────────────────────────────────────────────
+const FEED_ICONS = {
+  email_sent:    '📤',
+  email_open:    '👁️',
+  email_reply:   '💬',
+  email_bounce:  '↩️',
+  unsubscribe:   '🚫',
+  call_connected:'✅',
+  call_voicemail:'📱',
+  call_attempt:  '📵',
+  system:        '⚙️',
+};
+
+function feedItemHTML(item, isNew) {
+  const icon   = FEED_ICONS[item.type] || '•';
+  const src    = item.source || 'system';
+  const srcCls = `source-${src.toLowerCase().includes('instant') ? 'instantly' : src.toLowerCase().includes('bland') ? 'bland' : src.toLowerCase().includes('clay') ? 'clay' : 'system'}`;
+  const t      = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
+  return `
+    <div class="feed-item${isNew ? ' new-item' : ''}">
+      <div class="feed-icon">${icon}</div>
+      <div class="feed-content">
+        <div class="feed-msg">${escHtml(item.message)}</div>
+        <div class="feed-meta">
+          <span class="source-badge ${srcCls}">${escHtml(src)}</span>
+          <span class="feed-time">${t}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderFeed() {
+  const list = document.getElementById('feed-list');
+  if (!activityFeed.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📡</div><p>Waiting for incoming events…<br/>Webhooks will appear here in real time.</p></div>`;
+    document.getElementById('feed-count').textContent = '0 events';
+    return;
+  }
+  list.innerHTML = activityFeed.slice(0, 50).map(i => feedItemHTML(i, false)).join('');
+  document.getElementById('feed-count').textContent = `${activityFeed.length} events`;
+}
+
+function prependFeedItem(item, isNew) {
+  const list = document.getElementById('feed-list');
+  const empty = list.querySelector('.empty-state');
+  if (empty) list.innerHTML = '';
+  list.insertAdjacentHTML('afterbegin', feedItemHTML(item, isNew));
+  while (list.children.length > 50) list.lastChild.remove();
+}
+
+// ── Call Logs ─────────────────────────────────────────────────────────────────
+function dispClass(d) {
+  const dl = (d || '').toLowerCase();
+  if (dl.includes('connect') || dl.includes('answer') || dl.includes('conversation')) return 'disp-connected';
+  if (dl.includes('voicemail') || dl.includes('vm')) return 'disp-voicemail';
+  return 'disp-noanswer';
+}
+
+function fmtDur(s) {
+  if (!s) return '—';
+  const m = Math.floor(s / 60), r = s % 60;
+  return m > 0 ? `${m}m ${r}s` : `${r}s`;
+}
+
+function callRowHTML(log, isNew) {
+  const hasRecording = !!log.recordingUrl;
+  return `
+    <tr class="${isNew ? 'new-row' : ''}" data-id="${escHtml(log.id)}">
+      <td>
+        <div style="font-weight:600;">${escHtml(log.contact)}</div>
+        <div style="font-size:10px;color:var(--muted);">${escHtml(log.company)}</div>
+      </td>
+      <td><span class="disp-badge ${dispClass(log.disposition)}">${escHtml(log.disposition || 'Unknown')}</span></td>
+      <td>${fmtDur(log.duration)}</td>
+      <td style="color:var(--muted);">${escHtml(log.agent || '—')}</td>
+      <td>
+        ${hasRecording
+          ? `<button class="play-btn" onclick='openModal(${JSON.stringify(log)})'>▶ Play</button>`
+          : `<span style="color:var(--muted);font-size:11px;">—</span>`}
+      </td>
+    </tr>`;
+}
+
+function renderCallLogs() {
+  const tbody = document.getElementById('calls-tbody');
+  if (!callLogs.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📞</div><p>No calls yet.</p></div></td></tr>`;
+    document.getElementById('calls-count').textContent = '0 calls';
+    return;
+  }
+  tbody.innerHTML = callLogs.slice(0, 50).map(l => callRowHTML(l, false)).join('');
+  document.getElementById('calls-count').textContent = `${callLogs.length} calls`;
+}
+
+function prependCallRow(log, isNew) {
+  const tbody = document.getElementById('calls-tbody');
+  const empty = tbody.querySelector('.empty-state');
+  if (empty) tbody.innerHTML = '';
+  tbody.insertAdjacentHTML('afterbegin', callRowHTML(log, isNew));
+  while (tbody.children.length > 50) tbody.lastChild.remove();
+  document.getElementById('calls-count').textContent = `${callLogs.length} calls`;
+}
+
+// ── Recording Modal ───────────────────────────────────────────────────────────
+function openModal(log) {
+  document.getElementById('modal-contact').textContent = log.contact || '—';
+  document.getElementById('modal-company').textContent = log.company || '';
+  document.getElementById('modal-phone').textContent   = log.phone   || '—';
+  document.getElementById('modal-disp').textContent    = log.disposition || '—';
+  document.getElementById('modal-dur').textContent     = fmtDur(log.duration);
+  document.getElementById('modal-agent').textContent   = log.agent   || '—';
+  document.getElementById('modal-time').textContent    = log.timestamp ? new Date(log.timestamp).toLocaleString() : '—';
+  document.getElementById('modal-notes').textContent   = log.notes   || '(no notes)';
+
+  const audioWrap = document.getElementById('modal-audio-wrap');
+  const audio     = document.getElementById('modal-audio');
+  if (log.recordingUrl) {
+    audio.src = log.recordingUrl;
+    audioWrap.style.display = 'block';
+  } else {
+    audioWrap.style.display = 'none';
+  }
+
+  document.getElementById('recording-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('recording-modal').classList.remove('open');
+  document.getElementById('modal-audio').pause();
+}
+document.getElementById('recording-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+const CHART_OPTS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+};
+
+// Email donut
+const emailCtx = document.getElementById('emailChart').getContext('2d');
+const emailChart = new Chart(emailCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Sent', 'Opened', 'Replied', 'Bounced'],
+    datasets: [{
+      data: [0, 0, 0, 0],
+      backgroundColor: ['#3b82f6', '#22c55e', '#6c63ff', '#ef4444'],
+      borderWidth: 0,
+      hoverOffset: 4,
+    }]
+  },
+  options: {
+    ...CHART_OPTS,
+    cutout: '70%',
+    plugins: {
+      legend: {
+        display: true,
+        position: 'bottom',
+        labels: { color: '#8b90a7', font: { size: 10 }, padding: 8, boxWidth: 10 }
+      }
+    }
+  }
+});
+
+// Call donut
+const callCtx = document.getElementById('callChart').getContext('2d');
+const callChart = new Chart(callCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Connected', 'Voicemail', 'No Answer'],
+    datasets: [{
+      data: [0, 0, 0],
+      backgroundColor: ['#22c55e', '#a855f7', '#f59e0b'],
+      borderWidth: 0,
+      hoverOffset: 4,
+    }]
+  },
+  options: {
+    ...CHART_OPTS,
+    cutout: '70%',
+    plugins: {
+      legend: {
+        display: true,
+        position: 'bottom',
+        labels: { color: '#8b90a7', font: { size: 10 }, padding: 8, boxWidth: 10 }
+      }
+    }
+  }
+});
+
+// Timeline
+const timelineCtx = document.getElementById('timelineChart').getContext('2d');
+const MAX_TIMELINE_POINTS = 20;
+const timelineData = { labels: [], emails: [], calls: [] };
+
+const timelineChart = new Chart(timelineCtx, {
+  type: 'line',
+  data: {
+    labels: timelineData.labels,
+    datasets: [
+      {
+        label: 'Emails',
+        data: timelineData.emails,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.08)',
+        tension: 0.4,
+        fill: true,
+        pointRadius: 3,
+        borderWidth: 2,
+      },
+      {
+        label: 'Calls',
+        data: timelineData.calls,
+        borderColor: '#22c55e',
+        backgroundColor: 'rgba(34,197,94,0.08)',
+        tension: 0.4,
+        fill: true,
+        pointRadius: 3,
+        borderWidth: 2,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        align: 'end',
+        labels: { color: '#8b90a7', font: { size: 10 }, padding: 10, boxWidth: 10 }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color: '#8b90a7', font: { size: 9 }, maxRotation: 0 },
+        grid: { color: 'rgba(46,51,80,0.5)' }
+      },
+      y: {
+        ticks: { color: '#8b90a7', font: { size: 9 }, stepSize: 1 },
+        grid: { color: 'rgba(46,51,80,0.5)' },
+        beginAtZero: true,
+      }
+    }
+  }
+});
+
+function updateCharts() {
+  emailChart.data.datasets[0].data = [emailStats.sent, emailStats.opened, emailStats.replied, emailStats.bounced];
+  emailChart.update('none');
+  callChart.data.datasets[0].data = [callStats.connected, callStats.voicemail, callStats.noAnswer];
+  callChart.update('none');
+}
+
+function pushTimeline(type) {
+  const t = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const isEmail = type.startsWith('email') || type === 'unsubscribe';
+  const isCall  = type.startsWith('call');
+
+  if (timelineData.labels.length >= MAX_TIMELINE_POINTS) {
+    timelineData.labels.shift();
+    timelineData.emails.shift();
+    timelineData.calls.shift();
+  }
+  timelineData.labels.push(t);
+  timelineData.emails.push(isEmail ? (timelineData.emails[timelineData.emails.length-1] || 0) + 1 : (timelineData.emails[timelineData.emails.length-1] || 0));
+  timelineData.calls.push(isCall  ? (timelineData.calls[timelineData.calls.length-1]   || 0) + 1 : (timelineData.calls[timelineData.calls.length-1]   || 0));
+
+  timelineChart.data.labels   = [...timelineData.labels];
+  timelineChart.data.datasets[0].data = [...timelineData.emails];
+  timelineChart.data.datasets[1].data = [...timelineData.calls];
+  timelineChart.update();
+}
+
+// ── Demo mode ─────────────────────────────────────────────────────────────────
+let demoTimer = null;
+const DEMO_NAMES  = ['Sarah Chen','Marcus Webb','Priya Kapoor','Jordan Lee','Tyler Brooks','Aisha Osei','David Park'];
+const DEMO_COS    = ['Acme Corp','Nexus AI','Veritas Labs','Skyline Tech','DataPoint','Horizon SaaS'];
+const DEMO_DISPS  = ['Connected','Voicemail','No Answer','Connected','Connected','Voicemail'];
+const DEMO_AGENTS = ['AI Agent','Bland.ai','CallTools Agent'];
+
+function demoTick() {
+  const roll = Math.random();
+  const name = DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)];
+  const co   = DEMO_COS[Math.floor(Math.random() * DEMO_COS.length)];
+
+  if (roll < 0.5) {
+    // Email event
+    const types = ['email_sent','email_sent','email_sent','email_open','email_reply','email_bounce'];
+    const type  = types[Math.floor(Math.random() * types.length)];
+    const msgs  = { email_sent: `Email sent to ${name}`, email_open: `Email opened by ${name}`, email_reply: `Reply from ${name}`, email_bounce: `Bounce — ${name}` };
+
+    if (type === 'email_sent')   emailStats.sent++;
+    if (type === 'email_open')   emailStats.opened++;
+    if (type === 'email_reply')  emailStats.replied++;
+    if (type === 'email_bounce') emailStats.bounced++;
+    recomputeRates();
+
+    const item = { id: Date.now(), type, source: 'instantly', message: msgs[type] || type, timestamp: new Date().toISOString() };
+    activityFeed.unshift(item);
+    prependFeedItem(item, true);
+    pushTimeline(type);
+    renderEmailStats();
+    updateCharts();
+
+  } else {
+    // Call event
+    const disp = DEMO_DISPS[Math.floor(Math.random() * DEMO_DISPS.length)];
+    const dur  = disp === 'Connected' ? Math.floor(Math.random() * 300 + 60) : 0;
+    const agent = DEMO_AGENTS[Math.floor(Math.random() * DEMO_AGENTS.length)];
+    const log = {
+      id:          Date.now().toString(),
+      contact:     name,
+      company:     co,
+      phone:       '+1 (555) ' + Math.floor(100 + Math.random()*900) + '-' + Math.floor(1000 + Math.random()*9000),
+      disposition: disp,
+      duration:    dur,
+      recordingUrl: disp === 'Connected' ? null : null,
+      notes:       disp === 'Connected' ? 'Discussed pricing and next steps.' : '',
+      agent,
+      source:      'clay',
+      timestamp:   new Date().toISOString(),
+    };
+
+    callLogs.unshift(log);
+    callStats.total++;
+    if (disp === 'Connected')  callStats.connected++;
+    else if (disp === 'Voicemail') callStats.voicemail++;
+    else callStats.noAnswer++;
+    callStats.connectionRate = callStats.total > 0 ? +((callStats.connected / callStats.total) * 100).toFixed(1) : 0;
+
+    const callType = disp === 'Connected' ? 'call_connected' : disp === 'Voicemail' ? 'call_voicemail' : 'call_attempt';
+    const msg = disp === 'Connected' ? `Call connected — ${name} (${fmtDur(dur)})` : disp === 'Voicemail' ? `Voicemail left for ${name}` : `No answer — ${name}`;
+
+    const item = { id: Date.now(), type: callType, source: 'clay', message: msg, timestamp: new Date().toISOString() };
+    activityFeed.unshift(item);
+    prependFeedItem(item, true);
+    prependCallRow(log, true);
+    pushTimeline(callType);
+    renderCallStats();
+    updateCharts();
+    updateTimestamp(new Date().toISOString());
+  }
+}
+
+function recomputeRates() {
+  emailStats.openRate   = emailStats.sent > 0 ? +((emailStats.opened  / emailStats.sent) * 100).toFixed(1) : 0;
+  emailStats.replyRate  = emailStats.sent > 0 ? +((emailStats.replied / emailStats.sent) * 100).toFixed(1) : 0;
+  emailStats.bounceRate = emailStats.sent > 0 ? +((emailStats.bounced / emailStats.sent) * 100).toFixed(1) : 0;
+}
+
+let demoActive = false;
+function toggleDemo() {
+  demoActive = !demoActive;
+  const bar = document.getElementById('demo-bar');
+  if (demoActive) {
+    bar.classList.add('active');
+    demoTimer = setInterval(demoTick, 1800);
+  } else {
+    bar.classList.remove('active');
+    clearInterval(demoTimer);
+  }
+}
+function stopDemo() {
+  demoActive = false;
+  document.getElementById('demo-bar').classList.remove('active');
+  clearInterval(demoTimer);
+}
+
+function resetStats() {
+  emailStats = { sent:0, opened:0, replied:0, bounced:0, unsubscribed:0, clicked:0, openRate:0, replyRate:0, bounceRate:0 };
+  callStats  = { total:0, connected:0, voicemail:0, noAnswer:0, connectionRate:0 };
+  callLogs   = [];
+  activityFeed = [];
+  renderAll();
+  timelineData.labels = []; timelineData.emails = []; timelineData.calls = [];
+  timelineChart.data.labels = []; timelineChart.data.datasets[0].data = []; timelineChart.data.datasets[1].data = [];
+  timelineChart.update();
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
