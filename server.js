@@ -122,6 +122,12 @@ function processClaySEvent(c, event) {
 
   if (eventType.includes('call')) {
     processCall(c, event, name);
+  } else if (eventType.includes('lead_captured') || eventType.includes('lead')) {
+    // Owned-scraper leads (Google Maps / SERP / LinkedIn) via scrapers/bridge.js.
+    // These are captured prospects, not send/reply events, so they don't touch
+    // email or call stats — they only surface in the activity feed.
+    const src = event.source || 'scraper';
+    addActivity(c, 'lead_captured', src, event._display || `Lead captured — ${name}`, event._lead || event);
   } else if (eventType.includes('reply') || eventType.includes('responded')) {
     c.emailStats.replied++; recomputeRates(c);
     addActivity(c, 'email_reply', 'clay', `Reply from ${name}`);

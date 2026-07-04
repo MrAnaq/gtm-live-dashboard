@@ -1,2 +1,8 @@
 node_modules/
 .env
+
+# Scraper artifacts — corpus data and credentials never get committed
+scrapers/data/*.jsonl
+scrapers/data/*.index
+scrapers/proxies.txt
+scrapers/storage-state*.json
