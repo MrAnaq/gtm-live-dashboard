@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Business Model — GTM Live Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3350;
+    --text: #e8eaf6;
+    --muted: #8b90a7;
+    --accent: #6c63ff;
+
+    /* validated series palette (dark surface #1a1d27) */
+    --s1: #3987e5;   /* blue   — accent / owned */
+    --s2: #199e70;   /* aqua   */
+    --s3: #c98500;   /* yellow */
+    --s4: #9085e9;   /* violet */
+    --dim: #5b6280;  /* de-emphasis gray for context marks */
+
+    /* status (always icon + label, never color alone) */
+    --st-good: #0ca30c;
+    --st-warn: #fab219;
+
+    --grid: #262b3d; /* hairline, one step off surface */
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* ── Header (matches dashboard) ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), #06b6d4);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .btn {
+    padding: 7px 16px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 600; transition: opacity 0.2s; text-decoration: none;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+
+  .section-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted);
+    margin: 36px 0 12px;
+  }
+  .section-label:first-child { margin-top: 8px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card + .card { margin-top: 12px; }
+  .card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .card p.lead { font-size: 13px; color: var(--muted); line-height: 1.6; max-width: 72ch; }
+
+  /* ── Hero ── */
+  .hero { text-align: left; padding: 28px 24px; }
+  .hero .kicker { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 8px; }
+  .hero-figure { font-size: 56px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+  .hero-sub { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.6; max-width: 78ch; }
+
+  .meter { margin-top: 18px; max-width: 520px; }
+  .meter-track {
+    height: 10px; border-radius: 5px; background: #17365e; overflow: hidden;
+  }
+  .meter-fill { height: 100%; background: var(--s1); border-radius: 5px 0 0 5px; transition: width 0.25s; }
+  .meter-caption { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  /* ── Stat tiles ── */
+  .tile-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .tile.inset { background: var(--surface2); }
+  .tile-label { font-size: 11px; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
+  .tile-value { font-size: 24px; font-weight: 600; line-height: 1.1; }
+  .tile-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Controls ── */
+  .controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px 20px; margin-top: 16px; }
+  .ctl label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .ctl label output { color: var(--text); font-weight: 600; }
+  input[type="range"] {
+    width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
+    background: var(--surface2); border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--s1); border: 2px solid var(--surface);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--s1); border: 2px solid var(--surface);
+  }
+
+  /* ── Charts (hand-rolled marks) ── */
+  .chart-title { font-size: 12px; font-weight: 600; color: var(--muted); margin: 18px 0 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* stacked horizontal bar */
+  .stack-bar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; }
+  .stack-seg { height: 100%; margin-right: 2px; min-width: 2px; }
+  .stack-seg:last-child { margin-right: 0; }
+  .stack-seg .seg-label { font-size: 11px; font-weight: 600; line-height: 22px; padding-left: 8px; white-space: nowrap; }
+
+  /* horizontal bar rows */
+  .bar-row { display: grid; grid-template-columns: 200px 1fr; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .bar-row .bar-name { font-size: 12px; color: var(--text); text-align: right; }
+  .bar-row .bar-name small { display: block; color: var(--muted); font-size: 10px; }
+  .bar-track { position: relative; height: 20px; display: flex; align-items: center; }
+  .bar-mark { height: 20px; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .bar-val { font-size: 11px; color: var(--muted); margin-left: 8px; white-space: nowrap; font-weight: 600; }
+  .bar-val.strong { color: var(--text); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+  .axis-note { font-size: 10px; color: var(--muted); margin-top: 10px; font-style: italic; }
+
+  /* timeline marks (Lever A) */
+  .tl-inner { display: flex; height: 20px; border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+  .tl-seg { height: 100%; margin-right: 2px; min-width: 3px; }
+  .tl-seg:last-child { margin-right: 0; border-radius: 0 4px 4px 0; }
+  .tl-seg:first-child { border-radius: 4px 0 0 4px; }
+
+  /* table views */
+  details.tableview { margin-top: 14px; }
+  details.tableview summary { font-size: 11px; color: var(--muted); cursor: pointer; user-select: none; }
+  details.tableview table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  details.tableview th {
+    text-align: left; padding: 6px 8px; color: var(--muted); font-size: 10px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+  }
+  details.tableview td { padding: 7px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  details.tableview tr:last-child td { border-bottom: none; }
+
+  /* ── Verdict badges (status: icon + label, never color alone) ── */
+  .verdict { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); margin-top: 10px; }
+  .verdict .v-icon { font-size: 15px; line-height: 1.3; }
+  .verdict .v-body { font-size: 12px; line-height: 1.55; color: var(--muted); }
+  .verdict .v-body strong { color: var(--text); }
+  .verdict.good  { border-left: 3px solid var(--st-good); }
+  .verdict.warn  { border-left: 3px solid var(--st-warn); }
+
+  /* claim cards */
+  .claim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 900px) { .claim-grid { grid-template-columns: 1fr; } }
+  .claim-quote {
+    font-size: 14px; font-weight: 600; padding: 10px 14px;
+    background: var(--surface2); border-left: 3px solid var(--s1);
+    border-radius: 0 8px 8px 0; margin-bottom: 14px;
+  }
+  .mini-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  @media (max-width: 560px) { .mini-tiles { grid-template-columns: 1fr; } }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+  ul.why { margin: 12px 0 0 18px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  ul.why strong { color: var(--text); }
+
+  /* tooltip */
+  #tip {
+    position: fixed; display: none; z-index: 500; pointer-events: none;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 11px; color: var(--text);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4); max-width: 260px;
+  }
+  #tip .tip-k { color: var(--muted); }
+
+  footer { padding: 28px 24px 40px; text-align: center; font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    GTM Live Dashboard <span style="color:var(--muted);font-weight:500;">/ Business Model</span>
+  </div>
+  <a class="btn btn-outline" href="index.html">← Live Dashboard</a>
+</header>
+
+<main>
+
+  <!-- ═══════════ HERO ═══════════ -->
+  <div class="card hero">
+    <div class="kicker">The thesis</div>
+    <div class="hero-figure" id="hero-mrr">$150.0K</div>
+    <div class="hero-sub">
+      Monthly recurring revenue, run by a <strong id="hero-team">~2-person</strong> team.
+      Two things make it possible: <strong>(a)</strong> a fleet of pre-warmed lookalike / redirect domains
+      that lets a pay-per-lead campaign launch in <strong>48–72 hours</strong> instead of 4–5 weeks, and
+      <strong>(b)</strong> replacing per-credit data tools with owned raw-code scrapers
+      (Google&nbsp;Maps, SERP, and a bulk LinkedIn corpus) so the marginal cost of data collapses to near-zero.
+    </div>
+    <div class="meter">
+      <div class="meter-track"><div class="meter-fill" id="meter-fill" style="width:100%"></div></div>
+      <div class="meter-caption" id="meter-caption">100% of the $150K MRR target</div>
+    </div>
+  </div>
+
+  <!-- ═══════════ MRR MODEL ═══════════ -->
+  <div class="section-label">Revenue model — drag the assumptions</div>
+  <div class="card">
+    <h3>Where the MRR comes from</h3>
+    <p class="lead">Two revenue lines: flat retainers, and pay-per-lead deals that only become sellable
+      because launch time is 48–72h (a client paying per lead will not wait a month of domain warm-up
+      before seeing the first one).</p>
+
+    <div class="controls">
+      <div class="ctl">
+        <label>Retainer clients <output id="o-rc">15</output></label>
+        <input type="range" id="in-rc" min="0" max="40" step="1" value="15">
+      </div>
+      <div class="ctl">
+        <label>Avg retainer / mo <output id="o-rp">$5,000</output></label>
+        <input type="range" id="in-rp" min="1000" max="12000" step="250" value="5000">
+      </div>
+      <div class="ctl">
+        <label>Pay-per-lead clients <output id="o-pc">10</output></label>
+        <input type="range" id="in-pc" min="0" max="40" step="1" value="10">
+      </div>
+      <div class="ctl">
+        <label>Qualified leads / client / mo <output id="o-lc">30</output></label>
+        <input type="range" id="in-lc" min="5" max="100" step="5" value="30">
+      </div>
+      <div class="ctl">
+        <label>Price per lead <output id="o-pl">$250</output></label>
+        <input type="range" id="in-pl" min="50" max="800" step="25" value="250">
+      </div>
+      <div class="ctl">
+        <label>Team payroll / mo <output id="o-tc">$20,000</output></label>
+        <input type="range" id="in-tc" min="5000" max="60000" step="1000" value="20000">
+      </div>
+    </div>
+
+    <div class="chart-title" style="margin-top:22px;">Monthly P&amp;L — one bar, part to whole</div>
+    <div class="stack-bar" id="pnl-bar" role="img" aria-label="Monthly cost and margin breakdown"></div>
+    <div class="legend" id="pnl-legend"></div>
+
+    <div class="tile-row" style="margin-top:18px;">
+      <div class="tile inset">
+        <div class="tile-label">Retainer revenue</div>
+        <div class="tile-value" id="t-ret">$75.0K</div>
+      </div>
+      <div class="tile inset">
+        <div class="tile-label">Pay-per-lead revenue</div>
+        <div class="tile-value" id="t-ppl">$75.0K</div>
+        <div class="tile-sub" id="t-ppl-sub">300 leads / mo delivered</div>
+      </div>
+      <div class="tile inset">
+        <div class="tile-label">Total monthly cost</div>
+        <div class="tile-value" id="t-cost">$27.0K</div>
+        <div class="tile-sub">payroll + infra + tools</div>
+      </div>
+      <div class="tile inset">
+        <div class="tile-label">Net margin</div>
+        <div class="tile-value" id="t-margin">82%</div>
+        <div class="tile-sub" id="t-margin-sub">$123.0K / mo</div>
+      </div>
+      <div class="tile inset">
+        <div class="tile-label">Revenue per head</div>
+        <div class="tile-value" id="t-rph">$75.0K</div>
+        <div class="tile-sub">per person per month</div>
+      </div>
+    </div>
+
+    <details class="tableview">
+      <summary>View P&amp;L as table</summary>
+      <table id="pnl-table"><thead><tr><th>Line</th><th>$ / month</th><th>% of revenue</th></tr></thead><tbody></tbody></table>
+    </details>
+  </div>
+
+  <!-- ═══════════ LEVER A ═══════════ -->
+  <div class="section-label">Lever A — pre-warmed lookalike / redirect domains</div>
+  <div class="card">
+    <h3>Launch in 48–72 hours, not 4–5 weeks</h3>
+    <p class="lead">
+      A standing inventory of lookalike domains (e.g. <code>get-acmecorp.com</code>, 301-redirected to the
+      client's real site) with mailboxes that are <em>already warm</em>. When a client signs, domains are
+      assigned from inventory, copy is personalized, and sending starts at full volume — the 3-week warm-up
+      that normally gates every launch was paid in advance, continuously, as a background process.
+    </p>
+
+    <div class="chart-title">Days from signature to full sending volume</div>
+    <div id="timeline-chart"></div>
+    <div class="legend" id="timeline-legend"></div>
+    <div class="axis-note">Warm-up (the yellow block) doesn't shrink — it moves off the critical path into standing inventory.</div>
+
+    <details class="tableview">
+      <summary>View timeline as table</summary>
+      <table><thead><tr><th>Approach</th><th>Setup</th><th>Warm-up</th><th>Volume ramp</th><th>Total</th></tr></thead>
+      <tbody>
+        <tr><td>Cold start (traditional)</td><td>3 days</td><td>21 days</td><td>7 days</td><td>31 days</td></tr>
+        <tr><td>Pre-warmed fleet</td><td>1 day</td><td>0 days (done in advance)</td><td>2 days</td><td>~3 days (48–72h)</td></tr>
+      </tbody></table>
+    </details>
+
+    <div class="tile-row" style="margin-top:18px;">
+      <div class="tile inset">
+        <div class="tile-label">Cost to keep one domain warm</div>
+        <div class="tile-value">~$15<span style="font-size:13px;color:var(--muted);">/mo</span></div>
+        <div class="tile-sub">$15/yr domain + 2 mailboxes × ~$7</div>
+      </div>
+      <div class="tile inset">
+        <div class="tile-label">Fleet of 60 domains</div>
+        <div class="tile-value">~$900<span style="font-size:13px;color:var(--muted);">/mo</span></div>
+        <div class="tile-sub">carries ~15–20 concurrent clients</div>
+      </div>
+      <div class="tile inset">
+        <div class="tile-label">First lead delivered</div>
+        <div class="tile-value">Week 1</div>
+        <div class="tile-sub">vs week 5 on a cold start</div>
+      </div>
+      <div class="tile inset">
+        <div class="tile-label">Payback on the whole fleet</div>
+        <div class="tile-value">&lt;4 leads</div>
+        <div class="tile-sub">at $250/lead, per month</div>
+      </div>
+    </div>
+
+    <ul class="why">
+      <li><strong>It converts sales velocity into a product feature.</strong> "Campaign live in 72 hours" closes pay-per-lead deals that "live in 5 weeks" cannot.</li>
+      <li><strong>It de-risks deliverability.</strong> Burned domain? Swap in another warm one from inventory the same day — reputation is a rotating pool, not a single point of failure.</li>
+      <li><strong>It's cheap insurance.</strong> The whole fleet costs less than 1% of the MRR it enables.</li>
+    </ul>
+  </div>
+
+  <!-- ═══════════ LEVER B ═══════════ -->
+  <div class="section-label">Lever B — owned raw-code scrapers replace per-credit tools</div>
+  <div class="card">
+    <h3>Cost per 1,000 enriched contacts</h3>
+    <p class="lead">
+      Per-credit data tools price each record at retail. Owned scrapers (Google&nbsp;Maps, SERP) price it at
+      proxies + compute, and a bulk LinkedIn corpus prices it at amortized acquisition. The fixed cost moves
+      to engineering time; the <em>marginal</em> cost per record collapses.
+    </p>
+
+    <div class="chart-title">$ per 1,000 records — linear scale (the collapse is the story)</div>
+    <div id="cost-chart"></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:var(--dim)"></span> Per-credit tools (typical street pricing)</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--s1)"></span> Owned scrapers / corpus (marginal cost)</div>
+    </div>
+
+    <details class="tableview">
+      <summary>View costs as table</summary>
+      <table><thead><tr><th>Source</th><th>Type</th><th>$ / 1,000 records</th><th>What you're paying for</th></tr></thead>
+      <tbody>
+        <tr><td>ZoomInfo (credits)</td><td>Per-credit</td><td>~$300</td><td>Licensed database access, per-record retail</td></tr>
+        <tr><td>Clay (credits)</td><td>Per-credit</td><td>~$140</td><td>Orchestration + provider margins stacked</td></tr>
+        <tr><td>Apollo (export)</td><td>Per-credit</td><td>~$60</td><td>Cheapest retail tier, still per-record</td></tr>
+        <tr><td>Owned Google Maps scraper</td><td>Owned</td><td>~$2.50</td><td>Proxies + compute only</td></tr>
+        <tr><td>Owned SERP scraper</td><td>Owned</td><td>~$1.20</td><td>Proxies + compute only</td></tr>
+        <tr><td>Bulk LinkedIn corpus (amortized)</td><td>Owned</td><td>~$0.08</td><td>One-time acquisition ÷ corpus size</td></tr>
+      </tbody></table>
+    </details>
+
+    <ul class="why">
+      <li><strong>Per-credit tools make data an expense that scales with revenue.</strong> Owned scrapers make it a fixed cost that amortizes toward zero — which is exactly what an 80%+ margin at $150K MRR requires.</li>
+      <li><strong>The trade is capex-for-opex:</strong> a few weeks of engineering and ~$1.5K/mo of proxy/server spend replaces $10–40K/mo of credit burn at this lead volume.</li>
+      <li><strong>The moat is operational, not technical.</strong> Scraper code is easy; keeping it running against anti-bot systems every week is the 2-person team's real job.</li>
+    </ul>
+  </div>
+
+  <!-- ═══════════ CLAIMS REALITY CHECK ═══════════ -->
+  <div class="section-label">The headline claims — real, but only in one reading</div>
+  <div class="claim-grid">
+
+    <!-- Claim 1 -->
+    <div class="card">
+      <div class="claim-quote">"1,000 LinkedIn profiles per second at &lt;$0.000001 per profile"</div>
+      <p class="lead">True as the cost of <em>reading an already-owned corpus</em> from your own database.
+        False if read as live scraping-plus-AI. Drag the assumptions:</p>
+
+      <div class="controls" style="grid-template-columns:1fr;">
+        <div class="ctl">
+          <label>Corpus size <output id="o-c1size">100M profiles</output></label>
+          <input type="range" id="in-c1size" min="10" max="500" step="10" value="100">
+        </div>
+        <div class="ctl">
+          <label>One-time corpus acquisition cost <output id="o-c1acq">$8,000</output></label>
+          <input type="range" id="in-c1acq" min="1000" max="50000" step="1000" value="8000">
+        </div>
+        <div class="ctl">
+          <label>Live scrape cost (proxies + infra, per 1K profiles) <output id="o-c1live">$8.00</output></label>
+          <input type="range" id="in-c1live" min="1" max="30" step="0.5" value="8">
+        </div>
+        <div class="ctl">
+          <label>AI enrichment (per 1K profiles) <output id="o-c1ai">$3.00</output></label>
+          <input type="range" id="in-c1ai" min="0" max="20" step="0.5" value="3">
+        </div>
+      </div>
+
+      <div class="mini-tiles">
+        <div class="tile inset">
+          <div class="tile-label">Marginal read cost / profile</div>
+          <div class="tile-value" style="font-size:19px;" id="t-c1read">$0.00000008</div>
+          <div class="tile-sub">$200/mo DB server ÷ 1,000 reads/sec</div>
+        </div>
+        <div class="tile inset">
+          <div class="tile-label">Amortized acquisition / profile</div>
+          <div class="tile-value" style="font-size:19px;" id="t-c1amort">$0.00008</div>
+          <div class="tile-sub" id="t-c1amort-sub">= $0.08 per 1,000 profiles</div>
+        </div>
+        <div class="tile inset">
+          <div class="tile-label">Live scrape + AI / profile</div>
+          <div class="tile-value" style="font-size:19px;" id="t-c1livecost">$0.011</div>
+          <div class="tile-sub" id="t-c1live-sub">= $11.00 per 1,000 profiles</div>
+        </div>
+        <div class="tile inset">
+          <div class="tile-label">Live cost vs the claim</div>
+          <div class="tile-value" style="font-size:19px;" id="t-c1gap">×11,000</div>
+          <div class="tile-sub" id="t-c1gap-sub">~4 orders of magnitude apart</div>
+        </div>
+      </div>
+
+      <div class="verdict good">
+        <div class="v-icon">✅</div>
+        <div class="v-body"><strong>Real — as an amortized / owned-corpus cost.</strong>
+          1,000/sec is ordinary database read throughput, and the marginal cost per read genuinely sits below $0.000001.</div>
+      </div>
+      <div class="verdict warn">
+        <div class="v-icon">⚠️</div>
+        <div class="v-body"><strong>Hyperbole — as a live per-record cost.</strong>
+          Live scraping through residential proxies plus AI enrichment runs <span id="v-c1gap">~×11,000</span> the claimed figure. Nobody scrapes LinkedIn live at 1,000 profiles/sec.</div>
+      </div>
+    </div>
+
+    <!-- Claim 2 -->
+    <div class="card">
+      <div class="claim-quote">"10,000 websites per penny"</div>
+      <p class="lead">True as raw HTTP fetching on datacenter bandwidth (or reads of a free corpus like
+        Common&nbsp;Crawl). False once you add JS rendering, proxies, and AI extraction. Drag the assumptions:</p>
+
+      <div class="controls" style="grid-template-columns:1fr;">
+        <div class="ctl">
+          <label>Fetch server cost / mo <output id="o-c2vps">$40</output></label>
+          <input type="range" id="in-c2vps" min="10" max="300" step="10" value="40">
+        </div>
+        <div class="ctl">
+          <label>Raw fetch rate <output id="o-c2rate">50 pages/sec</output></label>
+          <input type="range" id="in-c2rate" min="5" max="200" step="5" value="50">
+        </div>
+        <div class="ctl">
+          <label>Headless render + proxies (per 1K pages) <output id="o-c2render">$1.50</output></label>
+          <input type="range" id="in-c2render" min="0.5" max="10" step="0.25" value="1.5">
+        </div>
+        <div class="ctl">
+          <label>LLM extraction (per 1K pages) <output id="o-c2llm">$2.00</output></label>
+          <input type="range" id="in-c2llm" min="0" max="15" step="0.25" value="2">
+        </div>
+      </div>
+
+      <div class="mini-tiles">
+        <div class="tile inset">
+          <div class="tile-label">Raw fetch cost / page</div>
+          <div class="tile-value" style="font-size:19px;" id="t-c2raw">$0.0000003</div>
+          <div class="tile-sub" id="t-c2raw-sub">= 32,400 pages per penny</div>
+        </div>
+        <div class="tile inset">
+          <div class="tile-label">Claim threshold</div>
+          <div class="tile-value" style="font-size:19px;">$0.000001</div>
+          <div class="tile-sub">10,000 pages per penny</div>
+        </div>
+        <div class="tile inset">
+          <div class="tile-label">Live render + extract / page</div>
+          <div class="tile-value" style="font-size:19px;" id="t-c2live">$0.0035</div>
+          <div class="tile-sub" id="t-c2live-sub">= 2.9 pages per penny</div>
+        </div>
+        <div class="tile inset">
+          <div class="tile-label">Live cost vs the claim</div>
+          <div class="tile-value" style="font-size:19px;" id="t-c2gap">×3,500</div>
+          <div class="tile-sub" id="t-c2gap-sub">~3.5 orders of magnitude apart</div>
+        </div>
+      </div>
+
+      <div class="verdict good" id="v-c2good">
+        <div class="v-icon">✅</div>
+        <div class="v-body"><strong>Real — as a raw-fetch / corpus-read cost.</strong>
+          Plain HTTP GETs on a cheap VPS <span id="v-c2raw">beat the claim (~32,400 pages/penny)</span>; Common Crawl reads are effectively free.</div>
+      </div>
+      <div class="verdict warn">
+        <div class="v-icon">⚠️</div>
+        <div class="v-body"><strong>Hyperbole — as a live scrape-plus-AI cost.</strong>
+          Rendered, proxied, LLM-extracted pages run <span id="v-c2gapx">~×3,500</span> the claimed figure — pennies per <em>page</em>, not pages per penny.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SYNTHESIS ═══════════ -->
+  <div class="section-label">Why the two levers compound</div>
+  <div class="two-col">
+    <div class="card">
+      <h3>Lever A buys revenue speed</h3>
+      <p class="lead">Pre-warmed domains collapse time-to-first-lead from ~5 weeks to ~3 days. That makes
+        pay-per-lead pricing sellable at all — and pay-per-lead is what lets 2 people charge for outcomes
+        instead of hours, decoupling MRR from headcount.</p>
+    </div>
+    <div class="card">
+      <h3>Lever B buys margin</h3>
+      <p class="lead">Owned scrapers collapse the cost of goods. At 300 leads/mo built from ~150K raw records,
+        credit tools would burn $10–40K/mo; owned infrastructure burns ~$1.5K. That spread <em>is</em> the
+        80%+ margin — and it's also where the marketing hyperbole comes from: quoting the amortized corpus
+        cost as if it were the live cost.</p>
+    </div>
+  </div>
+
+</main>
+
+<div id="tip"></div>
+
+<footer>
+  All figures are editable assumptions, not benchmarks — drag the sliders to stress-test the model.
+</footer>
+
+<script>
+// ── Formatting ────────────────────────────────────────────────────────────────
+const fmtK   = n => '$' + (n >= 1000 ? (n/1000).toFixed(1) + 'K' : n.toFixed(0));
+const fmtInt = n => n.toLocaleString('en-US');
+const fmtUSD = n => '$' + n.toLocaleString('en-US');
+function fmtTiny(n) {
+  if (n >= 0.01) return '$' + n.toFixed(3);
+  // fixed-point with enough decimals to show first 2 significant digits
+  const d = Math.min(10, Math.max(2, -Math.floor(Math.log10(n)) + 1));
+  return '$' + n.toFixed(d).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+const tip = document.getElementById('tip');
+function bindTips(root) {
+  root.querySelectorAll('[data-tip]').forEach(el => {
+    el.addEventListener('mousemove', e => {
+      tip.innerHTML = el.dataset.tip;
+      tip.style.display = 'block';
+      tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 280) + 'px';
+      tip.style.top  = (e.clientY + 14) + 'px';
+    });
+    el.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  });
+}
+
+// ── MRR model ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const MRR_TARGET = 150000;
+
+// fixed non-payroll cost lines (monthly)
+const INFRA = [
+  { name: 'Sending platform & mailboxes', v: 2000, c: 'var(--s2)' },
+  { name: 'Pre-warmed domain fleet',      v: 900,  c: 'var(--s3)' },
+  { name: 'Scraping infra (proxies + servers)', v: 1500, c: 'var(--s4)' },
+  { name: 'Ops & misc',                   v: 2600, c: 'var(--dim)' },
+];
+
+function renderMRR() {
+  const rc = +$('in-rc').value, rp = +$('in-rp').value;
+  const pc = +$('in-pc').value, lc = +$('in-lc').value, pl = +$('in-pl').value;
+  const tc = +$('in-tc').value;
+
+  $('o-rc').textContent = rc;
+  $('o-rp').textContent = fmtUSD(rp);
+  $('o-pc').textContent = pc;
+  $('o-lc').textContent = lc;
+  $('o-pl').textContent = fmtUSD(pl);
+  $('o-tc').textContent = fmtUSD(tc);
+
+  const retRev = rc * rp;
+  const leads  = pc * lc;
+  const pplRev = leads * pl;
+  const rev    = retRev + pplRev;
+  const infra  = INFRA.reduce((s, x) => s + x.v, 0);
+  const cost   = tc + infra;
+  const net    = rev - cost;
+  const marginPct = rev > 0 ? Math.round((net / rev) * 100) : 0;
+  const heads  = Math.max(1, Math.round(tc / 10000)); // ~$10K loaded cost per head
+
+  $('hero-mrr').textContent = fmtK(rev);
+  $('hero-team').textContent = '~' + heads + '-person';
+  const pct = Math.min(100, (rev / MRR_TARGET) * 100);
+  $('meter-fill').style.width = pct + '%';
+  $('meter-caption').textContent = Math.round((rev / MRR_TARGET) * 100) + '% of the $150K MRR target';
+
+  $('t-ret').textContent  = fmtK(retRev);
+  $('t-ppl').textContent  = fmtK(pplRev);
+  $('t-ppl-sub').textContent = fmtInt(leads) + ' leads / mo delivered';
+  $('t-cost').textContent = fmtK(cost);
+  $('t-margin').textContent = marginPct + '%';
+  $('t-margin-sub').textContent = fmtK(net) + ' / mo';
+  $('t-rph').textContent  = fmtK(rev / heads);
+
+  // stacked P&L bar: cost segments + net margin, 2px surface gaps
+  const segs = [
+    { name: 'Team payroll', v: tc, c: 'var(--s1)' },
+    ...INFRA,
+    { name: 'Net margin', v: Math.max(0, net), c: '#17365e', labeled: true },
+  ];
+  const total = Math.max(rev, cost);
+  const bar = $('pnl-bar');
+  bar.innerHTML = segs.map(s => {
+    const w = total > 0 ? (s.v / total) * 100 : 0;
+    const label = s.labeled && w > 18 ? `<span class="seg-label">Net margin ${fmtK(s.v)} · ${marginPct}%</span>` : '';
+    return `<div class="stack-seg" style="width:${w}%;background:${s.c};" data-tip="<strong>${s.name}</strong><br><span class='tip-k'>${fmtUSD(Math.round(s.v))} / mo · ${rev>0?Math.round(s.v/rev*100):0}% of revenue</span>">${label}</div>`;
+  }).join('');
+  bindTips(bar);
+
+  $('pnl-legend').innerHTML = segs.map(s =>
+    `<div class="legend-item"><span class="swatch" style="background:${s.c}"></span>${s.name}</div>`
+  ).join('');
+
+  $('pnl-table').querySelector('tbody').innerHTML =
+    [{ name: 'Revenue', v: rev }, ...segs].map(s =>
+      `<tr><td>${s.name}</td><td>${fmtUSD(Math.round(s.v))}</td><td>${rev > 0 ? Math.round(s.v / rev * 100) : 0}%</td></tr>`
+    ).join('');
+}
+
+['in-rc','in-rp','in-pc','in-lc','in-pl','in-tc'].forEach(id => $(id).addEventListener('input', renderMRR));
+renderMRR();
+
+// ── Lever A: timeline (days from signature to full sending volume) ─────────────
+const TL_MAX = 31;
+const TL_ROWS = [
+  { name: 'Cold start', sub: 'traditional', total: 31, segs: [
+      { label: 'Setup',       d: 3,  c: 'var(--dim)' },
+      { label: 'Warm-up',     d: 21, c: 'var(--s3)'  },
+      { label: 'Volume ramp', d: 7,  c: 'var(--s1)'  },
+  ]},
+  { name: 'Pre-warmed fleet', sub: '48–72h', total: 3, segs: [
+      { label: 'Setup',       d: 1,  c: 'var(--dim)' },
+      { label: 'Volume ramp', d: 2,  c: 'var(--s1)'  },
+  ]},
+];
+
+function renderTimeline() {
+  const el = $('timeline-chart');
+  el.innerHTML = TL_ROWS.map(r => {
+    const trackPct = (r.total / TL_MAX) * 100;
+    const inner = r.segs.map(s => {
+      const w = (s.d / r.total) * 100;
+      return `<div class="tl-seg" style="width:${w}%;background:${s.c};"
+        data-tip="<strong>${s.name} · ${s.label}</strong><br><span class='tip-k'>${s.d} day${s.d === 1 ? '' : 's'}</span>"></div>`;
+    }).join('');
+    return `
+      <div class="bar-row">
+        <div class="bar-name">${r.name}<small>${r.sub}</small></div>
+        <div class="bar-track">
+          <div class="tl-inner" style="width:${trackPct}%">${inner}</div>
+          <span class="bar-val ${r.total <= 3 ? 'strong' : ''}">${r.total} day${r.total === 1 ? '' : 's'} to first send</span>
+        </div>
+      </div>`;
+  }).join('');
+  bindTips(el);
+
+  $('timeline-legend').innerHTML = [
+    { n: 'Setup — domains assigned, copy personalized', c: 'var(--dim)' },
+    { n: 'Warm-up — pre-paid in standing inventory', c: 'var(--s3)' },
+    { n: 'Volume ramp — climbing to full send rate', c: 'var(--s1)' },
+  ].map(x => `<div class="legend-item"><span class="swatch" style="background:${x.c}"></span>${x.n}</div>`).join('');
+}
+renderTimeline();
+
+// ── Lever B: cost per 1,000 records ────────────────────────────────────────────
+const COST_ROWS = [
+  { name: 'ZoomInfo',            sub: 'per-credit', v: 300,  c: 'var(--dim)', pay: 'Licensed DB access, per-record retail' },
+  { name: 'Clay',               sub: 'per-credit', v: 140,  c: 'var(--dim)', pay: 'Orchestration + stacked provider margins' },
+  { name: 'Apollo export',      sub: 'per-credit', v: 60,   c: 'var(--dim)', pay: 'Cheapest retail tier, still per-record' },
+  { name: 'Google Maps scraper',sub: 'owned',      v: 2.5,  c: 'var(--s1)',  pay: 'Proxies + compute only' },
+  { name: 'SERP scraper',       sub: 'owned',      v: 1.2,  c: 'var(--s1)',  pay: 'Proxies + compute only' },
+  { name: 'LinkedIn corpus',    sub: 'amortized',  v: 0.08, c: 'var(--s1)',  pay: 'One-time acquisition ÷ corpus size' },
+];
+
+function fmtCost(v) {
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: v < 10 ? 2 : 0, maximumFractionDigits: 2 });
+}
+
+function renderCost() {
+  const max = Math.max(...COST_ROWS.map(r => r.v));
+  const el = $('cost-chart');
+  el.innerHTML = COST_ROWS.map(r => {
+    const w = Math.max(0.4, (r.v / max) * 100);
+    return `
+      <div class="bar-row">
+        <div class="bar-name">${r.name}<small>${r.sub}</small></div>
+        <div class="bar-track">
+          <div class="bar-mark" style="width:${w}%;background:${r.c};"
+            data-tip="<strong>${r.name}</strong><br><span class='tip-k'>${fmtCost(r.v)} / 1,000 records · ${r.pay}</span>"></div>
+          <span class="bar-val ${r.c === 'var(--s1)' ? 'strong' : ''}">${fmtCost(r.v)}</span>
+        </div>
+      </div>`;
+  }).join('');
+  bindTips(el);
+}
+renderCost();
+
+// ── Claim 1: "1,000 LinkedIn profiles/sec at <$0.000001/profile" ───────────────
+const SEC_PER_MO = 60 * 60 * 24 * 30;      // ≈ 2.592M seconds
+const CLAIM_PER_RECORD = 0.000001;          // $1e-6 — the headline threshold
+const DB_SERVER_MO = 200;                   // owned DB server, $/mo
+const READS_PER_SEC = 1000;                 // the claimed throughput
+
+function gapLabel(x) { return '×' + Math.round(x).toLocaleString('en-US'); }
+
+function renderClaim1() {
+  const sizeM = +$('in-c1size').value;      // corpus size, millions
+  const acq   = +$('in-c1acq').value;       // one-time acquisition $
+  const live  = +$('in-c1live').value;      // live scrape $ / 1K
+  const ai    = +$('in-c1ai').value;        // AI enrich $ / 1K
+
+  $('o-c1size').textContent = sizeM + 'M profiles';
+  $('o-c1acq').textContent  = fmtUSD(acq);
+  $('o-c1live').textContent = '$' + live.toFixed(2);
+  $('o-c1ai').textContent   = '$' + ai.toFixed(2);
+
+  const readCost  = DB_SERVER_MO / (READS_PER_SEC * SEC_PER_MO);   // $/profile read
+  const amort     = acq / (sizeM * 1e6);                            // $/profile amortized
+  const liveCost  = (live + ai) / 1000;                             // $/profile live+AI
+  const gap       = liveCost / CLAIM_PER_RECORD;
+
+  $('t-c1read').textContent    = fmtTiny(readCost);
+  $('t-c1amort').textContent   = fmtTiny(amort);
+  $('t-c1amort-sub').textContent = '= ' + fmtTiny(amort * 1000) + ' per 1,000 profiles';
+  $('t-c1livecost').textContent = fmtTiny(liveCost);
+  $('t-c1live-sub').textContent = '= $' + (live + ai).toFixed(2) + ' per 1,000 profiles';
+  $('t-c1gap').textContent      = gapLabel(gap);
+  $('t-c1gap-sub').textContent  = '~' + Math.round(Math.log10(gap)) + ' orders of magnitude apart';
+  $('v-c1gap').textContent      = '~' + gapLabel(gap);
+}
+['in-c1size','in-c1acq','in-c1live','in-c1ai'].forEach(id => $(id).addEventListener('input', renderClaim1));
+renderClaim1();
+
+// ── Claim 2: "10,000 websites per penny" ───────────────────────────────────────
+const CLAIM_PAGES_PER_PENNY = 10000;        // $0.000001 / page
+
+function perPenny(costPerPage) { return 0.01 / costPerPage; }
+function fmtPerPenny(n) {
+  if (n >= 100) return Math.round(n).toLocaleString('en-US') + ' pages per penny';
+  return n.toFixed(1) + ' pages per penny';
+}
+
+function renderClaim2() {
+  const vps    = +$('in-c2vps').value;      // fetch server $/mo
+  const rate   = +$('in-c2rate').value;     // pages/sec
+  const render = +$('in-c2render').value;   // headless + proxies $/1K
+  const llm    = +$('in-c2llm').value;      // LLM extraction $/1K
+
+  $('o-c2vps').textContent    = fmtUSD(vps);
+  $('o-c2rate').textContent   = rate + ' pages/sec';
+  $('o-c2render').textContent = '$' + render.toFixed(2);
+  $('o-c2llm').textContent    = '$' + llm.toFixed(2);
+
+  const rawCost   = vps / (rate * SEC_PER_MO);   // $/page raw fetch
+  const liveCost  = (render + llm) / 1000;        // $/page rendered + extracted
+  const gap       = liveCost / (0.01 / CLAIM_PAGES_PER_PENNY);
+
+  $('t-c2raw').textContent      = fmtTiny(rawCost);
+  $('t-c2raw-sub').textContent  = '= ' + fmtPerPenny(perPenny(rawCost));
+  $('t-c2live').textContent     = fmtTiny(liveCost);
+  $('t-c2live-sub').textContent = '= ' + fmtPerPenny(perPenny(liveCost));
+  $('t-c2gap').textContent      = gapLabel(gap);
+  $('t-c2gap-sub').textContent  = '~' + (Math.log10(gap)).toFixed(1) + ' orders of magnitude apart';
+
+  const rawPP = perPenny(rawCost);
+  $('v-c2raw').textContent = rawPP >= CLAIM_PAGES_PER_PENNY
+    ? `beat the claim (~${Math.round(rawPP).toLocaleString('en-US')} pages/penny)`
+    : `land near the claim (~${Math.round(rawPP).toLocaleString('en-US')} pages/penny)`;
+  $('v-c2gapx').textContent = '~' + gapLabel(gap);
+}
+['in-c2vps','in-c2rate','in-c2render','in-c2llm'].forEach(id => $(id).addEventListener('input', renderClaim2));
+renderClaim2();
+</script>
+</body>
+</html>
